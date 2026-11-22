@@ -732,6 +732,7 @@ really full. Meanwhile the controller sees the demand and adds replicas (after
 | What a quality score of 5 stands for | `absolute`: a fixed chance on the reference, 0.6994 for coding and 0.7685 for general | `quality.scale`, `quality.anchor` |
 | Exploration | off; on: 4% of a team's eligible task starts, half a level down and half up; a canary takes 20% of its level's | team `exploration` |
 | Request screening | off; `shadow`: findings recorded as ledger tags and metrics, nothing blocked | team `screening.mode` |
+| Budget step-down | off; on: new `auto` and tier tasks capped at level 1 once a budget that applies is 80% spent; no grace past 100% | team `budget_step_down` |
 | Exploring up stops when a budget is | 90% spent | fixed |
 | A canary is done after | 30 recorded task starts at its level, or 14 days | `routing.benchmark.canary_outcomes`, `canary_days` |
 | A level recommendation needs | 200 task starts on each side, and a clear difference at 90%: the level below at least 95% as good, or the level above clearly better | `routing.benchmark.min_outcomes`, `as_well` |

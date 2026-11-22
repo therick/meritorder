@@ -7,6 +7,9 @@
   one-time link from the People page, or `meritorder accounts create`), with a session in an HttpOnly cookie. API keys
   are for harnesses and services; one typed into the console opens a session tied to it, and the browser no longer
   stores it. Signing out ends the session on the gateway (decision 69). Needs migration 21 (`meritorder migrate`).
+- Budget step-down, per team (`budget_step_down`): from a share of any budget spent, new `auto` and tier tasks go to
+  cheaper models instead of being refused at 100%, with an optional grace past the team's and people's budgets;
+  tagged `budget_step_down` (decision 74).
 - Two-factor sign-in for local accounts: authenticator-app codes and ten recovery codes, in the console and
   `meritorder login`; an admin can reset it for someone who lost their device. `MERITORDER_AUTH_KEY` seals the secrets
   (decision 73). Needs migration 23.

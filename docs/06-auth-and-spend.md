@@ -687,6 +687,21 @@ flowchart TD
   against every budget, and the ledger tags them `explore` and `explore_from`.
 - Alerts go out at 80% and 100%; at 100% requests are refused with a 429 that says which budget
   was reached.
+- **Stepping down instead** (opt-in per team, `budget_step_down`, [decision 74](09-decisions.md#74-cheaper-models-as-a-budget-runs-out-not-only-a-refusal-at-100)):
+  once any budget that applies to a request (the organization's, the team's, the person's, the session's) is `at`
+  spent (80% by default), new `auto` and tier tasks go to models at `level` (1 by default) at most, even above a
+  client's `X-Route-Floor`. A named model is served as asked, and a task already under way keeps its model (moving it
+  would throw away its prompt cache). The ledger tags those requests `budget_step_down` (the level), so Breakdown → Tag
+  shows what stepping down covered. At 100% requests are refused as before, unless `grace_share` lets stepped-down
+  requests go on past the team's and the person's budgets by that share (0.1: 10% more); the organization's budget and
+  `max_session_usd` stay hard limits.
+
+  ```yaml
+  teams:
+    platform:
+      budget_usd_month: 5000
+      budget_step_down: {at: 0.8, level: 1, grace_share: 0.1}
+  ```
 - Policy lives alongside budgets, per team: `allowed_models` and `allowed_backends`, glob lists
   with `!` exclusions. For example `allowed_backends: ["*", "!deepseek"]` keeps a team's requests off
   the `deepseek` backend (DeepSeek's own API).

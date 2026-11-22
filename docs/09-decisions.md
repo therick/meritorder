@@ -77,6 +77,7 @@ What we decided, why, and what would make us revisit it. Newest decisions go at 
 | 71 | Request screening starts in shadow, with fixed rules on what agents do, not a detector | Accepted |
 | 72 | Named tiers, a route listing, and a caller's data policy | Accepted |
 | 73 | Two-factor sign-in for local accounts: authenticator codes and recovery codes | Accepted |
+| 74 | Cheaper models as a budget runs out, not only a refusal at 100% | Accepted |
 
 **Still open:** an embedding feature source for the learned router (decision 44). Judged labels are built (decision 52),
 opt-in per team, and tested only against mocks.
@@ -2199,3 +2200,22 @@ password hash already stands between a database copy and a sign-in. The QR code 
 dependencies), drawn as SVG squares so nothing is injected into the page.
 
 **Revisit if:** people want passkeys, or an organization wants two-factor required for everyone with a password.
+
+## 74. Cheaper models as a budget runs out, not only a refusal at 100%
+
+**Why:** A budget that's used up stops a team's agents mid-month with a 429. Most of their work would still get done on
+cheaper models, and other gateways (Cloudflare's, for one) move to them as a limit nears instead of refusing.
+
+**How:** `teams.<name>.budget_step_down` (off unless set): once any budget that applies to a request (the
+organization's, the team's, the person's, the session's) is `at` spent, new `auto` and tier tasks are capped at `level`
+(an explicit floor, above a client's `X-Route-Floor` too, and never explored up). A named model is served as asked: the
+client chose it. A task under way keeps its model until its next task, so its prompt cache isn't thrown away. Requests
+it covers are tagged `budget_step_down`. At 100% the refusal stays, unless `grace_share` lets stepped-down requests go
+on past the team's and the person's budgets by that share; the organization's budget and the session limit never bend.
+
+**Not chosen:** Stepping down named models too: a client that names a model has reasons (tools, format) the gateway
+can't see. Moving tasks already under way: the cache rebuild can cost more than the step saves. Grace by default: a
+budget should mean what it says unless the team decides otherwise.
+
+**Revisit if:** teams want named models stepped down to the nearest cheaper model, or a second step (level 2 at 80%,
+level 1 at 95%).

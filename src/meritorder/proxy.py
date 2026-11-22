@@ -183,7 +183,7 @@ def parse_tags(value: str) -> dict[str, str]:
 # API's compaction (responses_compact.py), and the exploration arm of a task start and the level it would have had
 # (decision 59), and an escalation inside a task: how many so far and the model it left (decision 62).
 RESERVED_TAGS = ("compression", "compaction", JUDGED_TAG, "explore", "explore_from", "escalation", "escalated_from", "usage",
-                 "screen", "screen_untrusted")
+                 "screen", "screen_untrusted", "budget_step_down")
 
 
 # Claude Code's own labels (its LLM-gateway headers; the last two with CLAUDE_CODE_GATEWAY_HINT_HEADERS=1, which `meritorder
@@ -211,6 +211,36 @@ def _month_key() -> str:
 
 GPU_IDLE_TTL = 60  # seconds a gateway keeps the month's unpaid GPU time before reading it again (Gateway.gpu_idle)
 EXPLORE_UP_SHARE = 0.9  # exploration never goes a level up once any budget that applies is this far spent
+
+
+def budget_caps(pre: dict, p: Principal, team: TeamConfig, cfg: Config) -> list[tuple[str, float | None, float]]:
+    """Each budget that applies to the request: (which, its cap, what's spent), from admit's one round trip."""
+    month = _month_key()
+    spent = pre.get("spend") or {}
+    org = spent.get(f"{month}:org:all")
+    return [("organization", cfg.safeguards.org_budget_usd_month, (org or 0.0) + (pre.get("gpu_idle") or 0.0)),
+            ("person", p.monthly_limit(team.user_budget_usd_month), spent.get(f"{month}:user:{p.user_id}") or 0.0),
+            ("team", team.budget_usd_month, spent.get(f"{month}:team:{p.team}") or 0.0),
+            ("session", team.max_session_usd, pre.get("session_spend") or 0.0)]
+
+
+def step_down(pre: dict, p: Principal, team: TeamConfig, cfg: Config) -> tuple[int, str] | None:
+    """The level new `auto` tasks are capped at, and why, once a budget that applies is ``budget_step_down.at`` spent."""
+    s = team.budget_step_down
+    if s is None:
+        return None
+    worst = max(((used / cap, which) for which, cap, used in budget_caps(pre, p, team, cfg) if cap), default=None)
+    if worst is None or worst[0] < s.at:
+        return None
+    return s.level, f"the {worst[1]}'s budget is {worst[0]:.0%} spent"
+
+
+def steps_down(cfg: Config, team: TeamConfig, requested: str) -> bool:
+    """Whether the team steps down and this request is one it applies to: `auto`, or a tier with a level."""
+    if team.budget_step_down is None:
+        return False
+    tier = cfg.tier(requested)
+    return requested in ("", cfg.routing.auto_model) or (tier is not None and tier.level is not None)
 
 
 def headroom(pre: dict, p: Principal, team: TeamConfig, cfg: Config) -> bool:
@@ -644,7 +674,8 @@ class Gateway:
         return cached[2]
 
     async def admit(self, p: Principal, team: TeamConfig, prompt_tokens: int, sid: str | None = None,
-                    thread: str | None = None, kv_id: str | None = None, extra_keys: list[str] | None = None) -> dict:
+                    thread: str | None = None, kv_id: str | None = None, extra_keys: list[str] | None = None,
+                    stepping: bool = False) -> dict:
         """Budgets, rate limits, and the session cap from one Redis round trip. Returns what it fetched
         (session, session spend, GPU utilization, KV-event notes) for routing. ``extra_keys``: other spend counters to read
         in the same trip (a conversation's own, for expected_cost's task costs)."""
@@ -672,11 +703,14 @@ class Gateway:
                 raise GatewayError(429, f"the organization's monthly LLM budget of ${cap:,.2f} is used up (spent "
                                         f"${spent[keys['org']] + idle:,.2f}, GPU time included); "
                                         "an admin can raise it on the console's Controls page", "rate_limit_error", SPENDING_LIMIT)
+        # A team stepping down (decision 74) may let stepped-down requests go past its and its people's budgets by
+        # grace_share; the organization's budget and the session limit stay hard.
+        grace = 1 + (team.budget_step_down.grace_share if stepping and team.budget_step_down else 0.0)
         limit = p.monthly_limit(team.user_budget_usd_month)
-        if limit is not None and spent[keys["user"]] >= limit:
+        if limit is not None and spent[keys["user"]] >= limit * grace:
             raise GatewayError(429, f"monthly budget of ${limit:,.2f} reached for {p.user_id} "
                                     f"(spent ${spent[keys['user']]:,.2f}); ask an admin to raise it", "rate_limit_error", SPENDING_LIMIT)
-        if team.budget_usd_month is not None and spent[keys["team"]] >= team.budget_usd_month:
+        if team.budget_usd_month is not None and spent[keys["team"]] >= team.budget_usd_month * grace:
             raise GatewayError(429, f"team '{p.team}' reached its monthly budget of ${team.budget_usd_month:,.2f}", "rate_limit_error",
                                SPENDING_LIMIT)
         for limit, key, _, message in checks:
@@ -898,8 +932,9 @@ class Gateway:
         cascade = self.router.cascades(team)  # this team's tasks may escalate (expected_cost, decision 62)
         tracked = self.router.model_choice(team)[0] == "expected_cost"  # its tasks' costs and tool results are followed
         task_keys = [f"task:{kv_id}", f"task-base:{kv_id}"] if tracked else []
+        stepping = steps_down(self.cfg, team, str(body.get("model") or ""))
         pre = await self.admit(principal, team, prompt_tokens, session_key(principal.user_id, sid),
-                               session_key(principal.user_id, thread), kv_id, task_keys)
+                               session_key(principal.user_id, thread), kv_id, task_keys, stepping=stepping)
         spent = {k: (pre.get("spend") or {}).get(k) or 0.0 for k in task_keys}
         now = time.time()
         session = Session.from_dict(pre["session"], sid, thread)
@@ -932,9 +967,11 @@ class Gateway:
         # Exploration (decision 59): only on live traffic people sent, never one pinned to a backend; never up when a budget
         # is nearly spent.
         explore = not (headers.get("x-meritorder-backend") or principal.internal or principal.tags.get("eval_run"))
+        stepped = step_down(pre, principal, team, self.cfg) if stepping else None  # budget_step_down (decision 74)
         decision = self.router.decide(
             explore=explore and team.exploration.enabled,
             explore_up=headroom(pre, principal, team, self.cfg),
+            level_cap=stepped[0] if stepped else None,
             requested=str(body.get("model") or ""),
             team=team,
             body=body,
@@ -996,7 +1033,7 @@ class Gateway:
                 # Exploring or escalating must never be why a request is refused: route it as it would have gone.
                 decision = self.router.decide(str(body.get("model") or ""), team, body, headers, None if is_new else session, est,
                                               boundary and not continuing, utilization, now, queue_full, pre.get("kv"),
-                                              client=wire or client_fmt, context=context)
+                                              client=wire or client_fmt, context=context, level_cap=stepped[0] if stepped else None)
                 within = [c for c in decision.candidates if worst(c) <= max_usd and self.output_allowance(body, c, tokens(c))[0] > 0]
             if not within and decision.candidates:
                 cheapest = min(decision.candidates, key=worst)
@@ -1008,6 +1045,8 @@ class Gateway:
                                    "invalid_request_error")
             decision.candidates = within
         tags = {**request_tags(headers, principal), **(gateway_tags or {})}
+        if decision.floor is not None and "capped at" in decision.floor.reason and "budget_step_down" in decision.floor.reason:
+            tags["budget_step_down"] = str(decision.floor.level)  # this task went to cheaper models to save the budget
         if team.screening.mode == "shadow":
             tags.update(self.screen(session, body, team.name))
         arm = decision.explore if boundary or decision.explore else session.explore

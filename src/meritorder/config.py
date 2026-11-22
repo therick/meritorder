@@ -722,6 +722,18 @@ class ExplorationConfig(BaseModel):
     canary_share: float = Field(default=0.2, ge=0, le=0.5)
 
 
+class BudgetStepDown(BaseModel):
+    """Cheaper models instead of a refusal as a budget runs out (decision 74). Once any budget that applies to a request
+    (the organization's, the team's, the person's, the session's) is ``at`` spent, `auto` and tier requests start new
+    tasks at ``level`` at most. A named model is served as asked. At 100% requests are refused as before, unless
+    ``grace_share`` lets stepped-down requests go on past the team's and the person's budgets by that share of them (0.1:
+    10% more); the organization's budget and the session limit stay hard."""
+
+    at: float = Field(default=0.8, gt=0, le=1)
+    level: int = Field(default=1, ge=1, le=5)
+    grace_share: float = Field(default=0.0, ge=0, le=1)
+
+
 class TierConfig(BaseModel):
     """A named route a caller asks for by name, as a model (decision 72): Blackstart's tiers (frontier, standard, cheap,
     embed) are route names, and the gateway decides what each sends to. A chat tier is `auto` at a fixed level (the
@@ -755,6 +767,7 @@ class TeamConfig(BaseModel):
     name: str = ""
     compression: CompressionConfig = CompressionConfig()
     screening: ScreeningConfig = ScreeningConfig()
+    budget_step_down: BudgetStepDown | None = None  # off unless set (decision 74)
     rate_limits: RateLimits = RateLimits()
     response_cache: ResponseCacheConfig = ResponseCacheConfig()
     stored_responses: StoredResponsesConfig = StoredResponsesConfig()  # the Responses API's stored mode (off by default)

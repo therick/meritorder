@@ -1577,6 +1577,11 @@ base URL (<code>&lt;gateway&gt;/v1</code>) and the key.</p>
 <td>team <code>screening.mode</code></td>
 </tr>
 <tr>
+<td>Cheaper models as a budget runs out, and a grace past it</td>
+<td>Config → YAML</td>
+<td>team <code>budget_step_down</code></td>
+</tr>
+<tr>
 <td>Pointing Claude Code, Codex CLI or pi at the gateway</td>
 <td>not in the console: a CLI command</td>
 <td><code>meritorder setup claude-code</code> / <code>setup codex</code> / <code>setup pi</code></td>
@@ -8363,10 +8368,23 @@ restores any of them, which saves it again as the newest version.</p>
   against every budget, and the ledger tags them <code>explore</code> and <code>explore_from</code>.</li>
 <li>Alerts go out at 80% and 100%; at 100% requests are refused with a 429 that says which budget
   was reached.</li>
-<li>Policy lives alongside budgets, per team: <code>allowed_models</code> and <code>allowed_backends</code>, glob lists
-  with <code>!</code> exclusions. For example <code>allowed_backends: ["*", "!deepseek"]</code> keeps a team's requests off
-  the <code>deepseek</code> backend (DeepSeek's own API).</li>
+<li><strong>Stepping down instead</strong> (opt-in per team, <code>budget_step_down</code>, <a href="#decisions-74-cheaper-models-as-a-budget-runs-out-not-only-a-refusal-at-100">decision 74</a>):
+  once any budget that applies to a request (the organization's, the team's, the person's, the session's) is <code>at</code>
+  spent (80% by default), new <code>auto</code> and tier tasks go to models at <code>level</code> (1 by default) at most, even above a
+  client's <code>X-Route-Floor</code>. A named model is served as asked, and a task already under way keeps its model (moving it
+  would throw away its prompt cache). The ledger tags those requests <code>budget_step_down</code> (the level), so Breakdown → Tag
+  shows what stepping down covered. At 100% requests are refused as before, unless <code>grace_share</code> lets stepped-down
+  requests go on past the team's and the person's budgets by that share (0.1: 10% more); the organization's budget and
+  <code>max_session_usd</code> stay hard limits.</li>
 </ul>
+<p><code>yaml
+  teams:
+    platform:
+      budget_usd_month: 5000
+      budget_step_down: {at: 0.8, level: 1, grace_share: 0.1}</code>
+- Policy lives alongside budgets, per team: <code>allowed_models</code> and <code>allowed_backends</code>, glob lists
+  with <code>!</code> exclusions. For example <code>allowed_backends: ["*", "!deepseek"]</code> keeps a team's requests off
+  the <code>deepseek</code> backend (DeepSeek's own API).</p>
 <h3 id="auth-and-spend-limits-that-stop-runaway-spend">Limits that stop runaway spend</h3>
 <div class="table-wrap"><table>
 <thead>
@@ -11981,6 +11999,11 @@ that key's role may see.</p></section><section id="decisions"><header class="sec
 <td>Two-factor sign-in for local accounts: authenticator codes and recovery codes</td>
 <td>Accepted</td>
 </tr>
+<tr>
+<td>74</td>
+<td>Cheaper models as a budget runs out, not only a refusal at 100%</td>
+<td>Accepted</td>
+</tr>
 </tbody>
 </table></div>
 <p><strong>Still open:</strong> an embedding feature source for the learned router (decision 44). Judged labels are built (decision 52),
@@ -13885,7 +13908,21 @@ gateway's host name and a server library; they can come next. SMS or email codes
 the weakest second factor. A required <code>MERITORDER_AUTH_KEY</code>: one more secret before anyone can turn two-factor on; the
 password hash already stands between a database copy and a sign-in. The QR code comes from <code>qrcode-generator</code> (MIT, no
 dependencies), drawn as SVG squares so nothing is injected into the page.</p>
-<p><strong>Revisit if:</strong> people want passkeys, or an organization wants two-factor required for everyone with a password.</p></section><section id="how-it-decides"><header class="sec-head"><span class="n">10</span><h2>How it decides</h2></header><p>Every decision Merit Order makes, in the order it makes them, with the exact rules and defaults.
+<p><strong>Revisit if:</strong> people want passkeys, or an organization wants two-factor required for everyone with a password.</p>
+<h3 id="decisions-74-cheaper-models-as-a-budget-runs-out-not-only-a-refusal-at-100">74. Cheaper models as a budget runs out, not only a refusal at 100%</h3>
+<p><strong>Why:</strong> A budget that's used up stops a team's agents mid-month with a 429. Most of their work would still get done on
+cheaper models, and other gateways (Cloudflare's, for one) move to them as a limit nears instead of refusing.</p>
+<p><strong>How:</strong> <code>teams.&lt;name&gt;.budget_step_down</code> (off unless set): once any budget that applies to a request (the
+organization's, the team's, the person's, the session's) is <code>at</code> spent, new <code>auto</code> and tier tasks are capped at <code>level</code>
+(an explicit floor, above a client's <code>X-Route-Floor</code> too, and never explored up). A named model is served as asked: the
+client chose it. A task under way keeps its model until its next task, so its prompt cache isn't thrown away. Requests
+it covers are tagged <code>budget_step_down</code>. At 100% the refusal stays, unless <code>grace_share</code> lets stepped-down requests go
+on past the team's and the person's budgets by that share; the organization's budget and the session limit never bend.</p>
+<p><strong>Not chosen:</strong> Stepping down named models too: a client that names a model has reasons (tools, format) the gateway
+can't see. Moving tasks already under way: the cache rebuild can cost more than the step saves. Grace by default: a
+budget should mean what it says unless the team decides otherwise.</p>
+<p><strong>Revisit if:</strong> teams want named models stepped down to the nearest cheaper model, or a second step (level 2 at 80%,
+level 1 at 95%).</p></section><section id="how-it-decides"><header class="sec-head"><span class="n">10</span><h2>How it decides</h2></header><p>Every decision Merit Order makes, in the order it makes them, with the exact rules and defaults.
 Each rule names the setting that controls it. The code is the source of truth:
 <code>proxy.py</code> (request pipeline), <code>router.py</code> (model and backend choice), <code>classifier.py</code> (levels), <code>learned.py</code> and
 <code>learned_jobs.py</code> (the opt-in learned router), <code>success.py</code> (expected total cost: the success predictor and the cascade),
@@ -15257,6 +15294,11 @@ really full. Meanwhile the controller sees the demand and adds replicas (after
 <td>Request screening</td>
 <td>off; <code>shadow</code>: findings recorded as ledger tags and metrics, nothing blocked</td>
 <td>team <code>screening.mode</code></td>
+</tr>
+<tr>
+<td>Budget step-down</td>
+<td>off; on: new <code>auto</code> and tier tasks capped at level 1 once a budget that applies is 80% spent; no grace past 100%</td>
+<td>team <code>budget_step_down</code></td>
 </tr>
 <tr>
 <td>Exploring up stops when a budget is</td>
