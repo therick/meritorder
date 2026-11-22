@@ -1,4 +1,4 @@
-import { Anchor, Paper, Select, SimpleGrid, Stack, Textarea } from "@mantine/core";
+import { Anchor, Paper, Select, SimpleGrid, Stack, Switch, Textarea } from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { Api, Doc, LevelRules } from "../../api";
 import { MODEL_CHOICES, Num, SectionTitle, Txt, lbl, setIn } from "./fields";
@@ -127,6 +127,9 @@ export function RoutingEditor({ api, draft, setDraft, modelNames, levelDefaults 
           <Num label="Assume at least this many turns left" value={r.min_expected_turns} onChange={(v) => set(["routing", "min_expected_turns"], v)} min={1} placeholder="3" help={H.min_expected_turns} />
           <Num label="…and at most" value={r.max_expected_turns} onChange={(v) => set(["routing", "max_expected_turns"], v)} min={1} placeholder="30" help={H.max_expected_turns} />
         </SimpleGrid>
+        <Switch mt="md" {...lbl("Send requests for older versions to the current one", H.upgrade_versions)}
+          description="claude-sonnet-4-5 gets claude-sonnet-5-5; responses say so. Off: other versions get a 404 naming the current one."
+          checked={r.upgrade_versions !== false} onChange={(e) => set(["routing", "upgrade_versions"], e.currentTarget.checked ? true : false)} />
       </Paper>
       <Paper>
         <SectionTitle title="Threshold or cost per success" intro={SECTION.model_choice} />

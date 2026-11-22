@@ -43,7 +43,7 @@ from .backends import Backend, describe
 from .cache_shaping import HOUR, needs_cache_marker
 from . import datapolicy
 from .classifier import Floor, classify, parse_floor
-from .config import PRIORITIES, UNPRICED, Config, ModelConfig, Price, Route, TeamConfig, needs_price
+from .config import PRIORITIES, UNPRICED, Config, ModelConfig, Price, Route, TeamConfig, current_version, needs_price
 from .learned import LearnedCall, LearnedRouter, features
 from .pauses import Pauses
 from .sessions import Session
@@ -901,6 +901,10 @@ class Router:
         else:
             model = self.resolve(requested)
             if model is None:
+                older = next((m for m in self.cfg.models if m.matches(requested)), None)
+                if older is not None:  # routing.upgrade_versions is off
+                    raise RoutingError(404, f"model '{requested}' is another version of {older.name}, which serves "
+                                            f"{current_version(older)}; ask for that (routing.upgrade_versions is off)", "not_found_error")
                 raise RoutingError(404, f"model '{requested}' is not configured", "not_found_error")
             if model.kind != "chat":
                 raise RoutingError(400, f"'{model.name}' is an embedding model; use /v1/embeddings", "invalid_request_error")

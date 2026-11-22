@@ -1342,6 +1342,22 @@ Moving costs nothing when the session's cache is already gone:
 And one move happens even mid-task, because staying would fail: the conversation has outgrown the
 model's context window (below).
 
+## Older model names
+
+A request that names another version of a configured model, such as `claude-sonnet-4-5` from a settings file, a script
+or an older client, matches the model through its aliases (`claude-sonnet-*`) and gets the model's current version
+(`claude-sonnet-5-5`). The response says so: `x-meritorder-upgraded-from: claude-sonnet-4-5`. `routing.upgrade_versions`
+(on by default; Configuration → Routing) turns it off: then only the model's name, aliases without a version
+(`sonnet`) and the version its routes serve are accepted, and another version gets a 404 that names the current one.
+To serve an older version on purpose, configure it as its own model.
+
+Settings the current version refuses are fitted to it on the way out (formats/thinking.py). An old thinking budget
+(`thinking: {type: enabled, budget_tokens}`), which Fable, Opus 4.7 and later, Sonnet 5 and later and Haiku 5.5 refuse,
+becomes adaptive thinking; when the request names no effort, the budget sets one (under 4,096 tokens `low`, under 16,384
+`medium`, under 32,768 `high`, otherwise `xhigh`, at the nearest level the model has). `thinking: {type: disabled}`,
+which Fable, Opus 5.5 and Sonnet 5.5 refuse, becomes `between_tools` on Sonnet 5.5 and low effort on the others.
+Models that take the settings as sent aren't touched.
+
 ## Context windows
 
 Each model's context window comes from the live price data (`context_window`, overridable per model).

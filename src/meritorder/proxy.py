@@ -33,10 +33,11 @@ from .compression import Result as CompressionResult
 from .compression import compress_tool_results, model_candidates
 from .compressor import ModelCompressor
 from .config import (BATCH_DISCOUNT, EFFORT_ORDER, Config, ModelConfig, Price, TeamConfig, batch_api, effort_format, needs_price,
-                     unpriced_message, uses_reported_cost)
+                     other_version, unpriced_message, uses_reported_cost)
 from .response_cache import cache_key, replay_stream, wanted
 from .formats.responses import ChatToResponsesStream, ResponsesError, chat_to_responses, request_echo, responses_to_chat
 from .formats.responses_tools import TOOLS_KEY, dropped_tools, fit_upstream
+from .formats.thinking import fit_thinking
 from .formats.responses_upstream import PROVIDER_CHAIN
 from .formats.sse import SSEEvent, event
 from .failover import check_body, error_in, start_stream
@@ -1547,6 +1548,10 @@ class Gateway:
         elif effort and style == "openrouter":
             up.pop("reasoning_effort", None)
             up["reasoning"] = {**(up.get("reasoning") or {}), "effort": effort}
+        if backend.format == "anthropic":
+            # Older clients' thinking settings (a budget, or thinking off) that this Claude model refuses (formats/thinking.py).
+            if (why := fit_thinking(up, model, cand.model.effort_levels)) is not None:
+                log.debug("%s/%s: %s", backend.name, model, why)
         if stored is not None and stored.store and backend.cfg.responses_store and backend.cfg.api == "responses" and backend.format == client_fmt:
             prev = stored.provider_previous
             same = prev is not None and prev["backend"] == backend.name and prev["model"] == cand.route.model and stored.held
@@ -1584,6 +1589,8 @@ class Gateway:
             h["x-meritorder-failed-over"] = ", ".join(ctx.failed_over)
         if ctx.decision.substituted_for:
             h["x-meritorder-substituted-for"] = ctx.decision.substituted_for
+        elif not ctx.decision.auto and ctx.decision.requested and other_version(ctx.cand.model, ctx.decision.requested):
+            h["x-meritorder-upgraded-from"] = ctx.decision.requested  # routing.upgrade_versions: the current version answered
         if ctx.cand.queued:
             h["x-meritorder-queued"] = "1"
         cfg = ctx.cand.backend.cfg
