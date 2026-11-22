@@ -566,6 +566,28 @@ class ModelConfig(BaseModel):
         return self.quality.get(task, self.quality.get("general", 0))
 
 
+def _bare(model_id: str) -> str:
+    """A model id without its provider's prefix and with dots as dashes: anthropic.claude-sonnet-5-5,
+    anthropic/claude-sonnet-5.5 and claude-sonnet-5-5 are all claude-sonnet-5-5."""
+    tail = re.split(r"[/]", model_id)[-1]
+    tail = re.sub(r"^(anthropic|openai|google|x-ai|xai|meta|mistral|amazon|us|eu|apac|global)\.", "", tail)
+    return tail.replace(".", "-").lower()
+
+
+def other_version(m: ModelConfig, requested: str) -> bool:
+    """Whether a request matching ``m`` through an alias names a version its routes don't serve (claude-sonnet-4-5 for a
+    model served as claude-sonnet-5-5), rather than the model itself (sonnet, claude-sonnet, or a route's own id)."""
+    if requested == m.name or not re.search(r"\d", requested):
+        return False
+    want = _bare(requested)
+    return all(_bare(r.model or "") != want for r in m.routes) and want != _bare(m.name)
+
+
+def current_version(m: ModelConfig) -> str:
+    """The version a model's first route serves, for messages (claude-sonnet-5-5)."""
+    return m.routes[0].model if m.routes and m.routes[0].model else m.name
+
+
 class QualityConfig(BaseModel):
     """Where `auto` gets each model's quality scores (see quality_data.py)."""
 
@@ -1163,6 +1185,11 @@ class CascadeConfig(BaseModel):
 
 class RoutingConfig(BaseModel):
     auto_model: str = "auto"
+    # A request naming another version of a configured model (claude-sonnet-4-5 when claude-sonnet serves
+    # claude-sonnet-5-5) gets the model's current version, through its aliases; responses say so
+    # (x-meritorder-upgraded-from). False: the model's name, aliases without a version ("sonnet") and aliases naming the
+    # version its routes serve are accepted; another version gets a 404 naming the current one.
+    upgrade_versions: bool = True
     switch_margin_pct: float = 10.0
     switch_margin_usd: float = 0.01
     est_output_tokens: int = 600
@@ -1733,6 +1760,8 @@ class Config(BaseModel):
                 return m
         for m in self.models:
             if m.matches(name):
+                if not self.routing.upgrade_versions and other_version(m, name):
+                    return None
                 return m
         return None
 

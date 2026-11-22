@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Older model names (`claude-sonnet-4-5`) get the model's current version, as before, now as a setting
+  (`routing.upgrade_versions`, on; Configuration → Routing) and said on the response (`x-meritorder-upgraded-from`).
+  Off, other versions get a 404 naming the current one.
+- Fixed: requests with an old thinking budget (`thinking: {type: enabled}`) or thinking off, sent to a Claude model that
+  refuses them (Opus 4.7 and later, Sonnet and Haiku 5 and later, Fable), failed with a 400 and were retried elsewhere.
+  They're now sent as adaptive thinking at a matching effort.
 - What agents bring, per team (`agent_tools`): the MCP servers, tools and skills Claude Code, Codex and pi offer the
   model, read from their requests. Shadow lists them on the Tools page and tags requests; enforce leaves out what the
   team doesn't allow, the same way every turn so prompt caches keep hitting (decision 76).

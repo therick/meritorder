@@ -37,6 +37,9 @@ quality:
 
 routing:
   auto_model: auto              # clients send model="auto" to let the router choose
+  # A request for another version of a model (claude-sonnet-4-5) gets its current version (claude-sonnet-5-5), and the
+  # response says so in x-meritorder-upgraded-from. false: other versions get a 404 naming the current one.
+  upgrade_versions: true
   switch_margin_pct: 10         # only move a session if it's this much cheaper (after cache rebuild)
   est_output_tokens: 600
   # Among routes that cost about the same, the faster one wins. cost: only ties (2%); balanced: a faster
