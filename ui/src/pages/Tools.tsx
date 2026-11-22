@@ -1,7 +1,7 @@
-import { Button, Code, Group, Modal, SimpleGrid, Stack, Table, Text } from "@mantine/core";
+import { Badge, Button, Code, Group, Modal, SegmentedControl, SimpleGrid, Stack, Table, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
-import type { Api, McpCall, McpOverview, McpServer, McpTool, McpToolDetail, Me } from "../api";
+import type { AgentToolsOverview, Api, McpCall, McpOverview, McpServer, McpTool, McpToolDetail, Me } from "../api";
 import { num } from "../api";
 import { Kpi, Loading, PageTitle, Panel, StatusBadge, type StatusKind } from "../components/common";
 import { useData } from "../hooks";
@@ -133,14 +133,61 @@ function Calls({ calls }: { calls: McpCall[] }) {
   );
 }
 
+const KIND = { mcp: "MCP server", tool: "Tool", skill: "Skill" } as const;
+const MODE = { off: "off", shadow: "shadow: listed, nothing changes", enforce: "enforced: what isn't allowed is left out" } as const;
+
+/** What each team's agents offer the model, from their requests (decision 76), and what the team's policy leaves out. */
+function AgentTools({ data }: { data: AgentToolsOverview }) {
+  const teams = data.teams.filter((t) => t.policy.mode !== "off");
+  const [team, setTeam] = useState<string | null>(null);
+  const [kind, setKind] = useState<string>("all");
+  if (!teams.length) {
+    return <Text c="dimmed" size="sm">No team looks at what its agents bring. Turn on Agent tools for a team (Config → Teams → the team → What agents bring) to
+      list the MCP servers, tools and skills Claude Code, Codex and pi offer, and to leave out what the team doesn't allow.</Text>;
+  }
+  const t = teams.find((x) => x.team === team) ?? teams[0];
+  const rows = t.seen.filter((s) => kind === "all" || s.kind === kind);
+  const ago = (at: number) => new Date(at * 1000).toLocaleString();
+  return (
+    <Stack gap="sm">
+      <Group gap="sm" wrap="wrap">
+        {teams.length > 1 && <SegmentedControl size="xs" value={t.team} onChange={setTeam} data={teams.map((x) => x.team)} />}
+        <SegmentedControl size="xs" value={kind} onChange={setKind}
+          data={[{ value: "all", label: "All" }, { value: "mcp", label: "MCP servers" }, { value: "tool", label: "Tools" }, { value: "skill", label: "Skills" }]} />
+        <Text size="xs" c="dimmed">Team {t.team}: {MODE[t.policy.mode]}{t.policy.gateway_mcp_only ? "; only MCP servers through this gateway" : ""}</Text>
+      </Group>
+      {rows.length ? (
+        <Table.ScrollContainer minWidth={640}>
+          <Table>
+            <Table.Thead><Table.Tr><Table.Th>Kind</Table.Th><Table.Th>Name</Table.Th><Table.Th>Policy</Table.Th><Table.Th>Last seen</Table.Th></Table.Tr></Table.Thead>
+            <Table.Tbody>
+              {rows.map((s) => (
+                <Table.Tr key={`${s.kind}:${s.name}`}>
+                  <Table.Td><Text size="sm">{KIND[s.kind] ?? s.kind}</Text></Table.Td>
+                  <Table.Td className="mono">{s.name}{s.kind === "mcp" && data.gateway_servers.includes(s.name) && <Badge size="xs" ml={6} color="mo">gateway</Badge>}</Table.Td>
+                  <Table.Td>{s.left_out
+                    ? <StatusBadge size="sm" kind={t.policy.mode === "enforce" ? "bad" : "warn"}>{t.policy.mode === "enforce" ? "left out" : "would be left out"}</StatusBadge>
+                    : <StatusBadge size="sm" kind="good">allowed</StatusBadge>}</Table.Td>
+                  <Table.Td className="mono" style={{ whiteSpace: "nowrap" }}>{ago(s.at)}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      ) : <Text c="dimmed" size="sm">Nothing seen yet from this team's agents. Each name is noted at most every ten minutes.</Text>}
+    </Stack>
+  );
+}
+
 /** The MCP gateway (decision 75): the tool servers agents reach through Merit Order, their tools as pinned, and the calls. */
 export function Tools({ api, me }: { api: Api; me: Me }) {
   const res = useData<McpOverview>(() => api.mcp(7), [api], 30_000);
   const log = useData(() => api.mcpCalls(100), [api], 30_000);
+  const agents = useData(() => api.agentTools(), [api], 60_000);
   const [review, setReview] = useState<McpTool | null>(null);
   const [connect, setConnect] = useState<string | null>(null);
   const d = res.data;
-  const title = <PageTitle title="Tools" sub="MCP servers your agents reach through Merit Order: who may use which tools, pinned tool definitions, and every call" />;
+  const title = <PageTitle title="Tools" sub="MCP servers your agents reach through Merit Order, and what agents bring themselves: who may use which tools, pinned tool definitions, and every call" />;
   if (res.loading || res.error || !d) return <>{title}<Loading loading={res.loading} error={res.error} /></>;
 
   const total = d.counts.reduce((a, c) => a + c.calls, 0);
@@ -157,7 +204,7 @@ export function Tools({ api, me }: { api: Api; me: Me }) {
         <Kpi label="To review" value={num(review_.length)} accent={review_.length > 0} sub="tools whose definition changed, or that wait for approval" />
       </SimpleGrid>
 
-      <Panel title="Servers" right={<Text size="xs" c="dimmed">Registered in the configuration (mcp.servers); agents sign in with their Merit Order key</Text>}>
+      <Panel title="Servers" right={<Text size="xs" c="dimmed">Registered on Config → MCP; agents sign in with their Merit Order key</Text>}>
         {d.servers.length ? (
           <Table.ScrollContainer minWidth={900}>
             <Table>
@@ -182,10 +229,8 @@ export function Tools({ api, me }: { api: Api; me: Me }) {
             </Table>
           </Table.ScrollContainer>
         ) : (
-          <Stack gap={6}>
-            <Text c="dimmed" size="sm">No MCP servers are registered. Add one to the configuration and agents reach it at <code>/mcp/&lt;name&gt;</code>:</Text>
-            <Code block>{`mcp:\n  servers:\n    docs:\n      url: https://mcp.example.com/mcp\n      auth: {type: api_key, value_env: MERITORDER_MCP_DOCS}\n      pinning: enforce`}</Code>
-          </Stack>
+          <Text c="dimmed" size="sm">No MCP servers are registered. {me.role === "admin" ? "Add one on Config → MCP" : "An admin adds them on Config → MCP"}, and
+            agents reach it at <code>/mcp/&lt;name&gt;</code> with their Merit Order key.</Text>
         )}
         {connect && d.servers.find((s) => s.name === connect) && <div style={{ marginTop: 12 }}><Connect s={d.servers.find((s) => s.name === connect)!} /></div>}
       </Panel>
@@ -218,6 +263,10 @@ export function Tools({ api, me }: { api: Api; me: Me }) {
             </Table>
           </Table.ScrollContainer>
         ) : <Text c="dimmed" size="sm">No tools seen yet: they're pinned the first time an agent lists a server's tools.</Text>}
+      </Panel>
+
+      <Panel title="What agents bring" right={<Text size="xs" c="dimmed">Their own MCP servers, tools and skills, read from model requests (Claude Code, Codex, pi)</Text>}>
+        {agents.loading || agents.error || !agents.data ? <Loading loading={agents.loading} error={agents.error} /> : <AgentTools data={agents.data} />}
       </Panel>
 
       <Panel title="Recent calls" right={<Text size="xs" c="dimmed">Who called which tool and how it went; the arguments and results aren't kept</Text>}>

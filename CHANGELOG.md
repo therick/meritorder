@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- What agents bring, per team (`agent_tools`): the MCP servers, tools and skills Claude Code, Codex and pi offer the
+  model, read from their requests. Shadow lists them on the Tools page and tags requests; enforce leaves out what the
+  team doesn't allow, the same way every turn so prompt caches keep hitting (decision 76).
+- MCP servers and each team's MCP access are set on the console: Configuration → MCP, and the team's settings.
 - An MCP gateway: register MCP servers once (`mcp.servers`, with the gateway's credential or each person's own) and
   agents reach them at `/mcp/<server>` with their Merit Order key. Per-team server and tool allow-lists, tool
   definitions pinned with admin approval of changes, keys in tool arguments and results recorded or blocked, a

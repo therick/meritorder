@@ -622,4 +622,19 @@ def build_mcp_router(gateway) -> APIRouter:
         rows = await gateway.store.mcp_calls(limit, server=server, team=None if p.role == "admin" else p.team)
         return {"calls": rows}
 
+    @router.get("/v1/admin/agent-tools")
+    async def agent_tools(request: Request):
+        """What agents offer the model, per team (agenttools.py): MCP servers, tools and skills, when each was last seen
+        and whether the team's policy leaves it out, with each team's policy. Only for teams whose agent_tools isn't off;
+        a team lead sees their own team."""
+        p = await staff(request)
+        teams = [t for t in gateway.cfg.teams] if p.role == "admin" else [gateway.cfg.team(p.team)]
+        out = []
+        for team in sorted(teams, key=lambda t: t.name):
+            name = team.name  # someone in a team that isn't listed uses the default team's settings, and is counted there
+            seen = await gateway.state.hgetall_json(f"agenttools:seen:{name}") if team.agent_tools.mode != "off" else {}
+            items = sorted((v for v in seen.values() if isinstance(v, dict)), key=lambda v: (v.get("kind", ""), str(v.get("name", "")).lower()))
+            out.append({"team": name, "policy": team.agent_tools.model_dump(), "seen": items})
+        return {"teams": out, "gateway_servers": [s.name for s in gateway.cfg.mcp.servers if s.enabled]}
+
     return router

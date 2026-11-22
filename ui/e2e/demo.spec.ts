@@ -127,3 +127,23 @@ test("a refresh stays on the page, and the host's 404 page sends a path to it", 
     if (i >= 0) problems.splice(i, 1);
   }
 });
+
+test("MCP servers and a team's agent tools are set on the Configuration page, and the Tools page lists what agents bring", async ({ page }) => {
+  await page.goto("./#config");
+  await page.getByRole("tab", { name: "MCP" }).click();
+  await expect(page.getByRole("cell", { name: /^github/ })).toBeVisible();
+  await page.getByRole("cell", { name: /^linear/ }).click();
+  await expect(page.getByRole("combobox", { name: "Credential", exact: true })).toHaveValue("Each person's own token");
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("tab", { name: "Teams" }).click();
+  await page.getByRole("cell", { name: /tools: shadow/ }).click();
+  await expect(page.getByText("What agents bring (Claude Code, Codex, pi)")).toBeVisible();
+  await page.getByRole("combobox", { name: "Agent tools policy" }).click();
+  await page.getByRole("option", { name: /Enforce/ }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByText(/Unsaved: Teams/)).toBeVisible();
+  await page.goto("./#tools");
+  await expect(page.getByText("What agents bring")).toBeVisible();
+  await expect(page.getByRole("cell", { name: "personal-notion" })).toBeVisible();
+  await expect(page.getByText("would be left out").first()).toBeVisible();
+});
