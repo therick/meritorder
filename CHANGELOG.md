@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- An MCP gateway: register MCP servers once (`mcp.servers`, with the gateway's credential or each person's own) and
+  agents reach them at `/mcp/<server>` with their Merit Order key. Per-team server and tool allow-lists, tool
+  definitions pinned with admin approval of changes, keys in tool arguments and results recorded or blocked, a
+  per-person call limit, and a log of every call (never its arguments or results) on the console's new Tools page
+  (decision 75). Needs migration 24 (`meritorder migrate`).
 - Contributions now need a signed CLA (CLA.md); DCO sign-off is no longer required.
 - People sign in to the console as themselves: an email address and password kept by Merit Order (invited with a
   one-time link from the People page, or `meritorder accounts create`), with a session in an HttpOnly cookie. API keys

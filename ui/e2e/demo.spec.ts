@@ -16,7 +16,7 @@ const test = base.extend<{ problems: string[] }>({
 
 const PAGES: [string, string][] = [
   ["dispatch", "Live dispatch"], ["reports", "Reports"], ["gpus", "GPUs"], ["controls", "Controls"], ["backends", "Backends"],
-  ["models", "Models"], ["teams", "Teams & budgets"], ["people", "People"], ["keys", "API keys"], ["config", "Configuration"],
+  ["models", "Models"], ["teams", "Teams & budgets"], ["people", "People"], ["keys", "API keys"], ["tools", "Tools"], ["config", "Configuration"],
   ["me", "My usage"],
 ];
 

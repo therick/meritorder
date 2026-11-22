@@ -618,6 +618,17 @@ export const CAUSES = [
   ["savings_response_cache", "Response cache"],
 ] as const;
 
+/** The MCP gateway (decision 75): GET /v1/admin/mcp. */
+export type McpServer = { name: string; description: string; url: string; auth: "none" | "api_key" | "forward"; forward_header: string | null;
+  pinning: "off" | "shadow" | "enforce"; new_tools: "allow" | "hold"; untrusted_content: boolean; path: string; tools?: number; enabled?: boolean };
+export type McpTool = { server: string; name: string; status: "approved" | "new" | "changed"; hash: string; first_seen: string;
+  changed_at: string | null; approved_by: string | null; approved_at: string | null; findings: string[] };
+export type McpCount = { server: string; tool: string; status: string; calls: number; avg_ms: number | null };
+export type McpOverview = { servers: McpServer[]; tools: McpTool[]; counts: McpCount[]; days: number; can_approve: boolean };
+export type McpToolDetail = McpTool & { definition: Record<string, unknown>; approved_definition: Record<string, unknown> | null };
+export type McpCall = { id: number; ts: string; server: string; tool: string; user_id: string | null; team: string | null; status: string;
+  reason: string | null; duration_ms: number | null; findings: Record<string, number> };
+
 export class ApiError extends Error {
   /** The gateway wants an authenticator code too (two-factor sign-in, decision 73). */
   needsCode = false;
@@ -688,6 +699,22 @@ export class Api {
 
   me() {
     return this.get<Me>("/v1/reports/me");
+  }
+
+  mcp(days = 7) {
+    return this.get<McpOverview>(`/v1/admin/mcp?days=${days}`);
+  }
+
+  mcpTool(server: string, tool: string) {
+    return this.get<McpToolDetail>(`/v1/admin/mcp/tools/${encodeURIComponent(server)}/${encodeURIComponent(tool)}`);
+  }
+
+  approveMcpTool(server: string, tool: string, hash: string) {
+    return this.send<{ ok: boolean }>("POST", `/v1/admin/mcp/tools/${encodeURIComponent(server)}/${encodeURIComponent(tool)}/approve`, { hash });
+  }
+
+  mcpCalls(limit = 100) {
+    return this.get<{ calls: McpCall[] }>(`/v1/admin/mcp/calls?limit=${limit}`);
   }
 
   /** Names and email addresses of the people this viewer may see, by id (people.tsx). */

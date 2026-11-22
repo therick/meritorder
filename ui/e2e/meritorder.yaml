@@ -48,6 +48,9 @@ batches: {poll_seconds: 0.001}   # the seed's one worker pass finds the mock bat
 billing:                         # one bill source that can never be fetched (no key, closed port): Reports → Bills shows why
   sources:
     mock-bill: {type: anthropic, backends: [mock-anthropic], base_url: "http://127.0.0.1:9", auth: {type: api_key, value_env: MERITORDER_BACKEND_E2E_BILLING_UNSET}}
+mcp:                             # an MCP server that can never be reached (closed port): the Tools page lists it
+  servers:
+    docs: {url: "http://127.0.0.1:9/mcp", description: "Internal docs search", pinning: enforce}
 auth:
   static_keys:
     - {key_env: E2E_ADMIN_KEY, user: root, team: default, role: admin}

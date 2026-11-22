@@ -263,7 +263,8 @@ are each looked at as they arrive. Fixed rules, no model; it takes well under a 
 | `after_untrusted` | One of the risky kinds above after the session read untrusted content: the shape of a prompt injection |
 
 Untrusted content is a result from a web fetch or search tool (`WebFetch`, `web_search`, browser tools, MCP fetch
-tools). Once a session has read some, its requests carry `screen_untrusted: 1`.
+tools), or from a tool of an MCP server registered with `untrusted_content: true` (see [MCP gateway](#mcp-gateway)).
+Once a session has read some, its requests carry `screen_untrusted: 1`.
 
 **Where it shows.** Each request with findings gets a `screen` ledger tag (the kinds, joined with `+`, for example
 `after_untrusted+credential_read`), so Reports → Breakdown → Tag → `screen` lists them and the Requests view filters
@@ -275,6 +276,94 @@ which is when the gateway first sees the call. Clients and keys can't set or cle
 injections against agents and flag up to a third of ordinary tool output, [decision 71](09-decisions.md));
 read base64 or other encodings; scan responses as they stream. Each is a later step, and blocking will start from what
 shadow mode shows on your traffic.
+
+## MCP gateway
+
+Agents use MCP servers for their tools: GitHub, an issue tracker, internal docs. Through the gateway, each server is
+registered once, with the organization's credential for it, and people connect to `/mcp/<server>` with their Merit
+Order key, as they do for models. The same people, teams and roles apply, and every tool call is logged
+([decision 75](09-decisions.md#75-an-mcp-gateway-servers-registered-once-reached-with-a-merit-order-key-tools-pinned)).
+
+```yaml
+mcp:
+  servers:
+    github:
+      url: https://api.githubcopilot.com/mcp/
+      description: GitHub, as the org's app
+      auth: {type: api_key, value_env: MERITORDER_MCP_GITHUB}   # the gateway's credential; never the caller's key
+      pinning: enforce                 # a changed tool is hidden until an admin approves it
+    linear:
+      url: https://mcp.linear.app/mcp
+      auth: {type: forward}            # each person's own token, sent in x-meritorder-mcp-authorization
+      untrusted_content: true          # issues are other people's words (request screening marks the session)
+  log_days: 90                         # how long the tool-call log is kept
+teams:
+  web:
+    mcp:
+      servers: ["*", "!github"]        # which servers the team may use
+      tools: ["*", "!linear/delete_*"] # which tools, as server/tool globs
+      calls_per_minute: 120            # each person's tool calls, across servers
+      secrets: block                   # keys in tool arguments and results: off, shadow (default) or block
+```
+
+**Connecting an agent.** The console's Tools page shows each server's command. Claude Code:
+
+```bash
+claude mcp add --transport http github https://gateway.example.com/mcp/github \
+  --header "Authorization: Bearer $MERITORDER_API_KEY"
+```
+
+Codex, in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.github]
+url = "https://gateway.example.com/mcp/github"
+bearer_token_env_var = "MERITORDER_API_KEY"
+```
+
+`GET /v1/mcp/servers` lists the servers the caller's team may use. Name a server in the agent as it's named here, so
+request screening recognizes its tools (`mcp__<server>__<tool>`).
+
+**How the gateway signs in to a server** (`auth.type`):
+
+| Type | What the server gets |
+|---|---|
+| `api_key` | The gateway's own credential, from `value_env` (a saved configuration may read only `MERITORDER_MCP_*`) or `value_file`; in `header` (default `Authorization: Bearer`) |
+| `forward` | Each person's own credential for that server, which their agent sends in `forward_header` (default `x-meritorder-mcp-authorization`) and the gateway sends on in `header` |
+| `none` | Nothing: an internal server on a private network |
+
+The caller's Merit Order key is never sent on, as MCP's authorization rules require. When a server refuses the
+gateway (401 or 403), the agent gets a 502 that says so, not a 401 that would look like its Merit Order key was wrong.
+
+**What the gateway checks.**
+
+* **Who may use what.** Tools a team may not use are left out of its tool lists, and calls to them are refused.
+* **Pinned tool definitions.** The first time a tool is listed, its name, title, description, schemas and annotations
+  are hashed and kept. A server that later changes a tool (the "rug pull", where a description is rewritten to steer
+  the agent) is recorded as `changed`. With `pinning: enforce` the changed tool is hidden, and calls to it refused, until
+  an admin reviews the old and new definitions on the Tools page and approves the new one; with `new_tools: hold`, a
+  tool first seen waits for approval too. `pinning: shadow` (the default) records and changes nothing.
+* **Descriptions that address the model** (`<IMPORTANT>`, "don't tell the user", paths like `~/.ssh`), and hidden
+  Unicode in them, are flagged on the Tools page.
+* **Keys** (the same patterns as request screening) in a call's arguments or a tool's result. With `secrets: block`, a
+  call whose arguments carry one is refused, and one in a result is replaced with `[key removed by Merit Order: <kind>]`.
+* **A per-person limit** on tool calls a minute.
+* **Sessions.** A server's session ID is bound to the person who opened it; anyone else presenting it gets a 404.
+
+A refused call comes back as a tool result with `isError: true` and the reason, so the agent can read it and tell the
+person, rather than as a protocol error.
+
+**What's kept.** Every tool call is logged: when, who, which server and tool, how it went (ok, tool error, failed,
+refused), how long it took, sizes, and the kinds of anything noticed. Never the arguments or the results. Admins see
+every team on the Tools page; team leads see their own team's calls. `meritorder_mcp_calls_total`,
+`meritorder_mcp_findings_total` and `meritorder_mcp_call_seconds` carry the same for alerts.
+
+**Transport.** MCP's Streamable HTTP (2025-03-26 and later): POSTs answered with JSON or an event stream, the GET
+stream for the server's own messages, and DELETE to end a session. Messages pass through as they are, except tool
+lists, tool calls and tool results. Servers that only speak stdio need a bridge that serves them over HTTP.
+
+**Not yet.** OAuth sign-in for agents (they send a key, as for models), the gateway signing in to servers with each
+person's OAuth tokens, one endpoint that joins several servers' tools, and a per-tool limit.
 
 ## People and teams
 

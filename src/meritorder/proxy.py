@@ -353,6 +353,7 @@ class Gateway:
         self.gateway_id = f"{socket.gethostname()}-{os.getpid()}"
         self.inflight = InFlight()
         self._batches = None
+        self._mcp = None
         self._stored = None
         self._gpu_idle: tuple[str, float, float] | None = None  # (month, when read, amount): see gpu_idle
         self.metrics.gauges = self.gauges
@@ -403,6 +404,19 @@ class Gateway:
 
             self._stored = StoredResponses(self)
         return self._stored
+
+    @property
+    def mcp(self):
+        """The MCP gateway (mcp.py): its upstream client and the pinned tool definitions' cache."""
+        if self._mcp is None:
+            from .mcp import McpGateway
+
+            self._mcp = McpGateway(self)
+        return self._mcp
+
+    def untrusted_tool_prefixes(self) -> tuple[str, ...]:
+        """How agents name the tools of MCP servers registered with untrusted_content (Claude Code: mcp__<server>__<tool>)."""
+        return tuple(f"mcp__{s.name.lower()}__" for s in self.cfg.mcp.servers if s.enabled and s.untrusted_content)
 
     def spawn(self, coro) -> None:
         task = asyncio.create_task(coro)
@@ -1264,7 +1278,7 @@ class Gateway:
         try:
             msgs = body.get("messages") or []
             since = session.msg_count if session.msg_count <= len(msgs) else 0  # a rewritten history is read again
-            found, session.untrusted = screening.scan(body, since, session.untrusted)
+            found, session.untrusted = screening.scan(body, since, session.untrusted, self.untrusted_tool_prefixes())
         except Exception as e:  # noqa: BLE001
             log.warning("request screening failed: %s", e)
             return {}

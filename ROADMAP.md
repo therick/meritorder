@@ -98,6 +98,11 @@ tool calls (download piped to a shell, uploads, DNS exfiltration, credential rea
 data, and untrusted content (web fetches) marking a session, all recorded as tags and metrics. Next: blocking where
 shadow mode shows few false alarms, then the rest of this list.
 
+The MCP gateway (decision 75) applies the same rules to tool traffic: tool definitions pinned, with changes held for
+an admin; keys in tool arguments and results recorded or blocked; per-team tool allow-lists. Next there: OAuth sign-in
+for agents, per-person OAuth tokens for servers that act as each person, one endpoint joining several servers' tools,
+and limits per tool.
+
 1. **Secret scanning on prompts.** API keys, tokens, private keys and database URLs found by pattern and entropy
    rules, then redacted, blocked or alerted on, per team. Only the kind and position are recorded, never the value.
    Responses are scanned too.

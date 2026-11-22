@@ -17,6 +17,8 @@ HISTOGRAMS = {
                                                (0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10)),
     "meritorder_outcome_seconds": ("Time spent reading a request's tool results for coding outcomes (outcomes.py).",
                                    (0.00005, 0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01)),
+    "meritorder_mcp_call_seconds": ("MCP tool calls through the gateway, from the request to the server's answer, by server.",
+                                    (0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 300)),
     "meritorder_screening_seconds": ("Time spent screening a request's new messages in shadow mode (screening.py).",
                                      (0.00005, 0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01)),
 }
@@ -64,6 +66,12 @@ class Metrics:
             "meritorder_failovers_total": "Attempts that failed on a backend and moved on to the next source, by backend and status.",
             "meritorder_screening_findings_total": "Request screening's findings in shadow mode (decision 71), by kind and team: "
                                                    "hidden Unicode, keys, risky tool calls, untrusted content.",
+            "meritorder_mcp_calls_total": "MCP tool calls through the gateway (decision 75), by server, team and status: ok, "
+                                          "error (the tool said it failed), failed (no usable answer), refused (by the gateway), "
+                                          "no_answer.",
+            "meritorder_mcp_findings_total": "What the MCP gateway noticed in tool lists, calls and results, by server, kind and team: "
+                                             "changed or new tool definitions, steering or hidden text in descriptions, keys, "
+                                             "refusals.",
             "meritorder_gpu_cache_turns_total": "Turns on a GPU deployment by whether the session's cache was expected warm there "
                                                 "and whether the reply said it was (hit: at least half the prompt read from the cache).",
             "meritorder_gpu_replica_unreachable_total": "Times a gateway couldn't connect to a GPU replica directly and used the "
