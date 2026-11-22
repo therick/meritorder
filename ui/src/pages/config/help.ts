@@ -269,3 +269,35 @@ export const REPORTING = {
   batch_rows: "Rows per insert. ClickHouse works best with large, infrequent inserts. Default 50,000.",
   timeout_seconds: "How long one query or insert may take. Default 60.",
 } as const;
+
+export const MCP = {
+  section: "MCP servers your people's agents reach through the gateway, at `/mcp/<name>` with their Merit Order key. Register a server once here; each team's settings (Teams tab) say which servers and tools it may use. The Tools page shows each server's tools and calls, and is where admins approve changed tools.",
+  url: "The server's Streamable HTTP address, e.g. `https://mcp.linear.app/mcp`. No password in it: use the credential below.",
+  description: "Shown to people on the Tools page and in `GET /v1/mcp/servers`.",
+  enabled: "Off: `/mcp/<name>` answers 404 for everyone, and agents set up for it lose its tools. Its pinned tools and call log are kept.",
+  auth_type: "How the gateway signs in to the server. None: no credential (a public or internal server). Gateway's key: one credential for everyone, from an environment variable or a mounted file, never sent to callers. Each person's own: the agent sends the person's own token in the forward header, and the gateway passes it on, for servers that act as the person. A caller's Merit Order key is never sent to a server.",
+  auth_header: "The header the server expects the credential in. Default `authorization`.",
+  auth_prefix: "Put before the credential. Default `Bearer ` for the authorization header, nothing for others.",
+  auth_value_env: "The environment variable holding the server's credential, set on every gateway. It must start with `MERITORDER_MCP_` (e.g. `MERITORDER_MCP_LINEAR`), so a configuration saved here can't send other secrets to a server.",
+  auth_value_file: "A mounted secret file holding the credential. Wins over the variable, and is read again when it changes.",
+  forward_header: "The header agents send the person's own token in. Default `x-meritorder-mcp-authorization`.",
+  headers: "More fixed headers sent to the server on every request. Not for secrets: they're shown here and stored in the configuration.",
+  timeout_seconds: "The longest the gateway waits for the server's response, or between events of a stream. Default 300.",
+  pinning: "Each tool's definition (name, description, schemas) is recorded when first seen. Shadow: a changed definition is flagged on the Tools page. Enforce: a changed tool is also hidden, and calls to it refused, until an admin approves the new definition. Off: not recorded.",
+  new_tools: "Allow: a tool first seen is recorded as it is and can be used. Hold (with pinning on enforce): it's hidden until an admin approves it.",
+  untrusted_content: "Its results are other people's words (web pages, tickets, email). Request screening then marks a session as having read untrusted content when one of its results comes back, and watches what the agent does next.",
+  log_days: "How long the call log is kept (who called which tool, when, how it went; never arguments or results). Default 90.",
+} as const;
+
+export const AGENT = {
+  section: "Gateway MCP servers are the ones registered on the MCP tab. Agent tools are what each agent brings itself (its own MCP servers, built-in tools and skills): the gateway reads them from every model request, for Claude Code, Codex and pi.",
+  servers: "Which registered MCP servers this team may connect to: globs with `!exclusions`, e.g. `*`, `!github`. Others answer 404 and aren't listed for them.",
+  tools: "Which of those servers' tools it may see and call, as `server/tool` globs, e.g. `*`, `!github/delete_*`. Others are left out of the tool list and calls to them are refused.",
+  calls_per_minute: "Each person's tool calls per minute, across servers. Over it, calls get an error result. Blank: no limit.",
+  secrets: "Keys in tool arguments and results (the same patterns as request screening). Shadow: counted on the Tools page. Block: a call whose arguments hold one is refused, and one in a result is replaced with a marker. Off: not looked for.",
+  mode: "Off: not looked at. Shadow: the Tools page lists what agents offer, and requests are tagged with what would be left out; nothing changes. Enforce: what isn't allowed is left out of each request before it's sent, the same way every turn, so prompt caches still hit.",
+  mcp_servers: "MCP servers by the name the agent gives them (their tools are named `mcp__<server>__<tool>` in Claude Code and Codex): globs with `!exclusions`, any case. pi has no MCP of its own.",
+  gateway_mcp_only: "Only MCP servers reached through this gateway (MCP tab) that the team may use. Name them in the agent's config as they're named here, as the Tools page's connect snippets do.",
+  agent_tools: "The agent's other tools by name: globs with `!exclusions`, any case, e.g. `*`, `!WebFetch`, `!web_search`. Claude Code's are Bash, Read, Edit, WebFetch...; Codex's shell, apply_patch, web_search...; pi's read, bash, edit, write.",
+  skills: "Skills by name: globs with `!exclusions`. Skills left out are removed from the list the agent gives the model (Claude Code's skill reminder, Codex's skills instructions, pi's available_skills); with none allowed, the tool that runs them goes too. A skill a person names themselves (/skill, $skill) still reaches the model, and an agent can still read a skill's file from disk.",
+} as const;

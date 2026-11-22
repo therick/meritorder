@@ -628,6 +628,10 @@ export type McpOverview = { servers: McpServer[]; tools: McpTool[]; counts: McpC
 export type McpToolDetail = McpTool & { definition: Record<string, unknown>; approved_definition: Record<string, unknown> | null };
 export type McpCall = { id: number; ts: string; server: string; tool: string; user_id: string | null; team: string | null; status: string;
   reason: string | null; duration_ms: number | null; findings: Record<string, number> };
+/** What a team's agents offer the model (agenttools.py): an MCP server, a tool or a skill, last seen ``at`` (epoch s). */
+export type AgentToolSeen = { kind: "mcp" | "tool" | "skill"; name: string; at: number; left_out: boolean };
+export type AgentToolsPolicy = { mode: "off" | "shadow" | "enforce"; mcp_servers: string[]; gateway_mcp_only: boolean; tools: string[]; skills: string[] };
+export type AgentToolsOverview = { teams: { team: string; policy: AgentToolsPolicy; seen: AgentToolSeen[] }[]; gateway_servers: string[] };
 
 export class ApiError extends Error {
   /** The gateway wants an authenticator code too (two-factor sign-in, decision 73). */
@@ -715,6 +719,10 @@ export class Api {
 
   mcpCalls(limit = 100) {
     return this.get<{ calls: McpCall[] }>(`/v1/admin/mcp/calls?limit=${limit}`);
+  }
+
+  agentTools() {
+    return this.get<AgentToolsOverview>("/v1/admin/agent-tools");
   }
 
   /** Names and email addresses of the people this viewer may see, by id (people.tsx). */

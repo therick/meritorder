@@ -97,6 +97,23 @@ function mcpSample(): Json {
 // ------------------------------------------------------------------ the session's own state
 
 const source: Json = get("GET /v1/admin/config/source");
+// The sample MCP servers and one team's agent tools policy, in the configuration as the console edits them.
+if (!source.document.mcp) {
+  source.document.mcp = { servers: {
+    github: { url: "https://api.githubcopilot.com/mcp/", description: "GitHub (the org's app token)", auth: { type: "api_key", value_env: "MERITORDER_MCP_GITHUB" }, pinning: "enforce" },
+    linear: { url: "https://mcp.linear.app/mcp", description: "Linear issues", auth: { type: "forward" }, untrusted_content: true },
+    docs: { url: "http://docs-mcp.internal:8000/mcp", description: "Internal docs search", pinning: "enforce", new_tools: "hold" },
+  } };
+  const team = source.document.teams?.web ?? Object.values(source.document.teams ?? {})[0];
+  if (team) team.agent_tools = { mode: "shadow", mcp_servers: ["*", "!personal-*"], skills: ["*", "!deploy-prod"] };
+  source.yaml = toYaml(source.document);
+}
+const agentTeam = source.document.teams?.web ? "web" : Object.keys(source.document.teams ?? { default: {} })[0];
+const agentSeen: Json[] = [
+  ["mcp", "github", false], ["mcp", "linear", false], ["mcp", "personal-notion", true], ["mcp", "playwright", false],
+  ["tool", "Bash", false], ["tool", "Read", false], ["tool", "Edit", false], ["tool", "WebFetch", false], ["tool", "shell", false],
+  ["tool", "apply_patch", false], ["tool", "Skill", false], ["skill", "review", false], ["skill", "deploy-prod", true], ["skill", "pdf", false],
+].map(([kind, name, left], i) => ({ kind, name, left_out: left, at: Date.now() / 1000 - i * 400 }));
 const versions: Json = get("GET /v1/admin/config/versions");
 const keys: Json[] = get("GET /v1/admin/keys").keys;
 const users: Json = get("GET /v1/admin/users");
@@ -437,6 +454,9 @@ const routes: Route[] = [
   // The Tools page (MCP gateway): sample servers, pinned tools and calls.
   ["GET", /^\/v1\/admin\/mcp$/, () => ok(mcpSample())],
   ["GET", /^\/v1\/admin\/mcp\/calls$/, () => ok({ calls: mcpCalls })],
+  ["GET", /^\/v1\/admin\/agent-tools$/, () => ok({ gateway_servers: mcpServers.map((x) => x.name), teams: Object.entries(source.document.teams ?? {}).map(([team, t]: [string, Json]) => ({
+    team, policy: { mode: "off", mcp_servers: ["*"], gateway_mcp_only: false, tools: ["*"], skills: ["*"], ...(t.agent_tools ?? {}) },
+    seen: team === agentTeam && t.agent_tools?.mode && t.agent_tools.mode !== "off" ? agentSeen : [] })) })],
   ["GET", /^\/v1\/admin\/mcp\/tools\/([^/]+)\/([^/]+)$/, (m) => {
     const t = mcpTools.find((x) => x.server === m[1] && x.name === decodeURIComponent(m[2]));
     return t ? ok({ ...t, definition: t.definition, approved_definition: t.approved }) : err(404, "no such tool");

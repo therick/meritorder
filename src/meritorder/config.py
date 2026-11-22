@@ -781,9 +781,37 @@ class TeamMcp(BaseModel):
         return _allowed(server, self.servers) and _allowed(f"{server}/{tool}", self.tools)
 
 
+class AgentToolsConfig(BaseModel):
+    """Which of the tools, MCP servers and skills an agent brings the team's people may use (agenttools.py, decision 76).
+    The gateway reads them from each model request (Claude Code, Codex and pi name them differently) and, in enforce
+    mode, leaves out what isn't allowed: the same way every turn, so prompt caches still hit. shadow records what it
+    would leave out; off doesn't look."""
+
+    mode: Literal["off", "shadow", "enforce"] = "off"
+    # MCP servers by the name the agent gives them (its tools are mcp__<server>__<tool>): globs with !exclusions.
+    mcp_servers: list[str] = ["*"]
+    # Only MCP servers reached through this gateway (mcp.servers) that the team may use (mcp.servers on the team).
+    gateway_mcp_only: bool = False
+    # The agent's other tools, by name (Bash, WebFetch, shell, apply_patch, read...): globs with !exclusions, any case.
+    tools: list[str] = ["*"]
+    # Skills by name: globs with !exclusions. Skills left out are removed from the list the agent is given, and with
+    # none allowed the tool that runs them (Claude Code's Skill, Codex's skills.read) goes too.
+    skills: list[str] = ["*"]
+
+    def allows_server(self, server: str) -> bool:
+        return _allowed(server.lower(), [p.lower() for p in self.mcp_servers])
+
+    def allows_tool(self, name: str) -> bool:
+        return _allowed(name.lower(), [p.lower() for p in self.tools])
+
+    def allows_skill(self, name: str) -> bool:
+        return _allowed(name.lower(), [p.lower() for p in self.skills])
+
+
 class TeamConfig(BaseModel):
     name: str = ""
     mcp: TeamMcp = TeamMcp()
+    agent_tools: AgentToolsConfig = AgentToolsConfig()
     compression: CompressionConfig = CompressionConfig()
     screening: ScreeningConfig = ScreeningConfig()
     budget_step_down: BudgetStepDown | None = None  # off unless set (decision 74)

@@ -7,6 +7,7 @@ import { Icon } from "../../components/icons";
 import { useData } from "../../hooks";
 import { AccessEditor } from "./AccessEditor";
 import { BackendsEditor } from "./BackendsEditor";
+import { McpEditor } from "./McpEditor";
 import { ModelsEditor } from "./ModelsEditor";
 import { ReportingEditor } from "./ReportingEditor";
 import { RoutingEditor } from "./RoutingEditor";
@@ -17,6 +18,7 @@ const SECTIONS: { id: string; label: string; keys: string[] }[] = [
   { id: "models", label: "Models", keys: ["models"] },
   { id: "backends", label: "Backends", keys: ["backends"] },
   { id: "routing", label: "Routing", keys: ["routing", "baseline_model", "default_max_tokens"] },
+  { id: "mcp", label: "MCP", keys: ["mcp"] },
   { id: "access", label: "Access", keys: ["auth"] },
   { id: "reporting", label: "Reporting", keys: ["reporting"] },
 ];
@@ -37,6 +39,8 @@ export function ConfigPage({ api }: { api: Api }) {
   const stored = useMemo(() => teamStatus.data ? {
     teams: Object.fromEntries(teamStatus.data.teams.map((t) => [t.name, t.stored_responses])), key: teamStatus.data.stored_key,
   } : null, [teamStatus.data]);
+  const agentTools = useData(() => api.agentTools(), [api]);  // what each team's agents offer, as suggestions
+  const agentSeen = useMemo(() => agentTools.data ? Object.fromEntries(agentTools.data.teams.map((t) => [t.team, t.seen])) : undefined, [agentTools.data]);
   const [tick, setTick] = useState(0);
   const versions = useData(() => api.configVersions(), [api, tick]);
   const [original, setOriginal] = useState<Doc | null>(null);
@@ -142,7 +146,8 @@ export function ConfigPage({ api }: { api: Api }) {
               <Tabs.Tab value="yaml" ml="auto">YAML</Tabs.Tab>
             </Tabs.List>
             <Tabs.Panel value="teams"><TeamsEditor draft={draft} setDraft={edit} modelNames={names("models")} backendNames={names("backends")}
-              compressor={compressor.data ?? null} stored={stored} /></Tabs.Panel>
+              compressor={compressor.data ?? null} stored={stored} agentSeen={agentSeen} /></Tabs.Panel>
+            <Tabs.Panel value="mcp"><McpEditor draft={draft} setDraft={edit} /></Tabs.Panel>
             <Tabs.Panel value="models"><ModelsEditor draft={draft} setDraft={edit} backendNames={names("backends")} /></Tabs.Panel>
             <Tabs.Panel value="backends"><BackendsEditor draft={draft} setDraft={edit} modelNames={names("models")} status={status.data?.backends ?? []} /></Tabs.Panel>
             <Tabs.Panel value="routing"><RoutingEditor api={api} draft={draft} setDraft={edit} modelNames={names("models")} levelDefaults={levels.data?.defaults ?? null} /></Tabs.Panel>

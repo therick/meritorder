@@ -2250,3 +2250,26 @@ gateway: running other people's code next to the gateway's credentials. A detect
 screening (decision 71), the fixed rules can be measured first.
 
 **Revisit if:** teams want one MCP endpoint for all their tools, servers that need per-person OAuth, or a limit per tool.
+
+## 76. What agents bring, limited in their model requests
+
+**Why:** The MCP gateway (decision 75) covers servers registered with it, but agents also load MCP servers and skills
+from the person's machine, and teams asked to turn those off from Merit Order. The gateway never sees those servers'
+traffic, but every model request lists the tools the agent offers and, in its prompt, the skills it may use.
+
+**How:** A team's `agent_tools` names allowed MCP servers (by the agent's name for them), other tools and skills, as
+globs. The gateway reads them from each request in the three harnesses' own forms (Claude Code's and Codex's
+`mcp__<server>__<tool>` tools, Codex's namespaces, and Claude Code's list of deferred tools and what its ToolSearch
+loads; Claude Code's skill reminder, Codex's `<skills_instructions>`,
+pi's `<available_skills>`) and, in enforce mode, leaves out what isn't allowed before anything else reads the request.
+The result depends only on the request and the policy, so it's the same every turn and prompt caches keep hitting.
+shadow tags and lists without changing anything, as screening and pinning start. The Tools page lists what each
+team's agents offer, from a hash per team written at most every ten minutes per name.
+
+**Not chosen:** Refusing the request instead of filtering it: the agent would fail every turn rather than work without
+the tool. Rewriting the model's tool calls in responses: the agent runs them, so a call to a tool it was never offered
+doesn't happen. Stopping a person's own `/skill` or a file read of a skill: that's the person acting on their own
+machine, for the agent's managed settings to decide.
+
+**Revisit if:** the harnesses change how they name tools or list skills (the patterns are in agenttools.py and its
+tests), or a fourth harness needs supporting.

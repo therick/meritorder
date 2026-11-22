@@ -66,7 +66,7 @@ from .sessions import SESSION_HEADERS, SESSION_TTL, Session, is_task_boundary, p
 from .store import SAVINGS_FIELDS, month_start
 from .tokens import SETTING as TOKENS_SETTING
 from .pauses import SETTING as PAUSES_SETTING
-from . import datapolicy, outcomes, screening
+from . import agenttools, datapolicy, outcomes, screening
 from .success import SETTING as SUCCESS_SETTING
 from .success import VERSION_SETTING as SUCCESS_VERSION
 from .success import Predictor, SuccessModel, TaskContext, project_hash, repo_hash, track, triage_buckets
@@ -183,7 +183,7 @@ def parse_tags(value: str) -> dict[str, str]:
 # API's compaction (responses_compact.py), and the exploration arm of a task start and the level it would have had
 # (decision 59), and an escalation inside a task: how many so far and the model it left (decision 62).
 RESERVED_TAGS = ("compression", "compaction", JUDGED_TAG, "explore", "explore_from", "escalation", "escalated_from", "usage",
-                 "screen", "screen_untrusted", "budget_step_down")
+                 "screen", "screen_untrusted", "budget_step_down", "agent_tools")
 
 
 # Claude Code's own labels (its LLM-gateway headers; the last two with CLAUDE_CODE_GATEWAY_HINT_HEADERS=1, which `meritorder
@@ -354,6 +354,7 @@ class Gateway:
         self.inflight = InFlight()
         self._batches = None
         self._mcp = None
+        self._tools_noted: dict[tuple, float] = {}  # (team, kind, name) -> when the inventory last heard of it
         self._stored = None
         self._gpu_idle: tuple[str, float, float] | None = None  # (month, when read, amount): see gpu_idle
         self.metrics.gauges = self.gauges
@@ -817,6 +818,8 @@ class Gateway:
         if not isinstance(body, dict):
             return self.reject("anthropic", 400, "request body must be a JSON object", "invalid_request_error")
         team = self.cfg.team(principal.team)
+        if team.agent_tools.mode == "enforce":
+            body, _ = self.agent_tools(body, "anthropic", team)  # counted as it would be sent
         requested = str(body.get("model") or "")
         model = self.cfg.model(requested)
         if model is None and requested not in ("", self.cfg.routing.auto_model) and self.cfg.tier(requested) is None:
@@ -937,6 +940,11 @@ class Gateway:
         """``turn``: a /v1/responses turn in stored mode (stored.service.StoredTurn), already rebuilt into ``body``;
         ``echo``: what a /v1/responses reply repeats from its request."""
         team = self.cfg.team(principal.team)
+        tool_tags: dict[str, str] = {}
+        if team.agent_tools.mode != "off":
+            # Before anything reads the request: what's left out is left out every turn, so routing, sessions and the
+            # prompt cache all see the same request turn to turn.
+            body, tool_tags = self.agent_tools(body, client_fmt, team)
         stream = bool(body.get("stream"))
         sid, _ = session_id(headers, body, client_fmt, principal.user_id)
         thread = sid + thread_suffix(headers)  # the conversation within the session (a subagent, a side request)
@@ -1061,6 +1069,7 @@ class Gateway:
         tags = {**request_tags(headers, principal), **(gateway_tags or {})}
         if decision.floor is not None and "capped at" in decision.floor.reason and "budget_step_down" in decision.floor.reason:
             tags["budget_step_down"] = str(decision.floor.level)  # this task went to cheaper models to save the budget
+        tags.update(tool_tags)
         if team.screening.mode == "shadow":
             tags.update(self.screen(session, body, team.name))
         arm = decision.explore if boundary or decision.explore else session.explore
@@ -1270,6 +1279,41 @@ class Gateway:
             self.spawn(self.store.mark_route_outcome(session.learn_row, retried=retried, floor_raised=raised))
         if not compacted and not retried:
             self.coding_outcome(session, body, boundary, prompt_tokens, spent, headers)
+
+    def agent_tools(self, body: dict, fmt: str, team: TeamConfig) -> tuple[dict, dict[str, str]]:
+        """The team's agent_tools policy on one request (agenttools.py): the body to send (in enforce mode, without what
+        isn't allowed) and its ledger tag. What agents offer is kept for the console's inventory; a failure in any of it
+        is logged and the request goes on as it came."""
+        try:
+            gateway = {s.name for s in self.cfg.mcp.servers if s.enabled and team.mcp.allows_server(s.name)}
+            enforce = team.agent_tools.mode == "enforce"
+            out, found = agenttools.apply(body, fmt, agenttools.Policy(team.agent_tools, gateway), enforce)
+        except Exception as e:  # noqa: BLE001
+            log.warning("agent tools policy failed: %s", e)
+            return body, {}
+        for kind, n in found.counts().items():
+            self.metrics.inc("meritorder_agent_tools_removed_total", {"team": team.name, "kind": kind, "mode": team.agent_tools.mode}, n)
+        self.note_agent_tools(team.name, found)
+        if not found.removed:
+            return out, {}
+        return out, {"agent_tools": f"{'removed' if enforce else 'would_remove'}:{len(found.removed)}"}
+
+    def note_agent_tools(self, team: str, found) -> None:
+        """What agents offered (MCP servers, tools, skills), for the console's inventory: written at most every ten
+        minutes per team and name, from each gateway."""
+        now = time.time()
+        fresh = []
+        removed = set(found.removed)
+        for item in sorted(found.seen):
+            key = (team, *item)
+            if self._tools_noted.get(key, 0) > now - 600:
+                continue
+            self._tools_noted[key] = now
+            fresh.append((f"{item[0]}:{item[1]}", {"at": now, "kind": item[0], "name": item[1], "left_out": item in removed}))
+        if len(self._tools_noted) > 50_000:
+            self._tools_noted.clear()
+        for field_, value in fresh:
+            self.spawn(self.state.hset_json(f"agenttools:seen:{team}", field_, value))
 
     def screen(self, session: Session, body: dict, team: str) -> dict[str, str]:
         """Request screening in shadow mode (screening.py): what's new since the session's last turn, as ledger tags and

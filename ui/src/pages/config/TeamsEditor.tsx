@@ -2,15 +2,74 @@ import { Icon } from "../../components/icons";
 import { Status, StatusBadge } from "../../components/common";
 import { Alert, Badge, Button, Divider, Drawer, Group, MultiSelect, Select, SimpleGrid, Stack, Switch, Table, TagsInput, Text, TextInput } from "@mantine/core";
 import { useState } from "react";
-import type { CompressorStatus, Doc, StoredKey, StoredSize } from "../../api";
+import type { AgentToolSeen, CompressorStatus, Doc, StoredKey, StoredSize } from "../../api";
 import { bytes, num, storedLine, usd } from "../../api";
 import { EnvName, MODEL_CHOICES, Num, SectionTitle, Txt, isEnvRef, lbl, setIn } from "./fields";
-import { ROUTING as RH, SECTION, TEAM as H } from "./help";
+import { AGENT as AH, ROUTING as RH, SECTION, TEAM as H } from "./help";
 
 /** What each team keeps in the Responses API's stored mode (GET /v1/console/teams): sizes, never content. */
 export type StoredStatus = { teams: Record<string, StoredSize>; key: StoredKey | null };
 type Props = { draft: Doc; setDraft: (d: Doc) => void; modelNames: string[]; backendNames: string[]; compressor?: CompressorStatus | null;
-  stored?: StoredStatus | null };
+  stored?: StoredStatus | null; agentSeen?: Record<string, AgentToolSeen[]> };
+
+const globs = (v: string[]) => (v.length ? v : undefined);
+const ALL = (v: unknown) => !Array.isArray(v) || (v.length === 1 && v[0] === "*");
+
+/** What a team may use through the MCP gateway (mcp), and of what its agents bring (agent_tools). ``seen``: what this
+ * team's agents have offered (Tools page inventory), as suggestions. */
+function ToolsSection({ team, set, mcpServers, seen }: { team: Doc; set: (path: (string | number)[], v: unknown) => void;
+  mcpServers: string[]; seen: AgentToolSeen[] }) {
+  const m = team.mcp ?? {};
+  const a = team.agent_tools ?? {};
+  const mode = a.mode ?? "off";
+  const of = (kind: string) => [...new Set(seen.filter((s) => s.kind === kind).map((s) => s.name))];
+  const suggest = (names: string[]) => ["*", ...names, ...names.map((n) => `!${n}`)];
+  const serverTools = mcpServers.map((s) => `${s}/*`);
+  return (
+    <Stack gap="sm">
+      <SectionTitle title="MCP servers through the gateway" intro={AH.section} />
+      {mcpServers.length ? (
+        <>
+          <SimpleGrid cols={2}>
+            <TagsInput {...lbl("Servers", AH.servers)} description='e.g. "*", "!github". Empty: all.' data={suggest(mcpServers)}
+              value={m.servers ?? []} onChange={(v) => set(["mcp", "servers"], globs(v))} clearable />
+            <TagsInput {...lbl("Tools (server/tool)", AH.tools)} description='e.g. "*", "!github/delete_*". Empty: all.' data={["*", ...serverTools, ...serverTools.map((t) => `!${t}`)]}
+              value={m.tools ?? []} onChange={(v) => set(["mcp", "tools"], globs(v))} clearable />
+            <Num label="Tool calls per person per minute" value={m.calls_per_minute} onChange={(v) => set(["mcp", "calls_per_minute"], v)} min={1} placeholder="no limit" help={AH.calls_per_minute} />
+            <Select {...lbl("Keys in tool calls and results", AH.secrets)} allowDeselect={false} value={m.secrets ?? "shadow"}
+              data={[{ value: "off", label: "Off" }, { value: "shadow", label: "Shadow: count them" }, { value: "block", label: "Block: refuse calls, remove from results" }]}
+              onChange={(v) => set(["mcp", "secrets"], v === "shadow" ? undefined : v)} />
+          </SimpleGrid>
+          {onlyExclusions(m.servers) && <Alert color="red" icon={<Icon name="bad" size={16} />}>Servers has only exclusions, so this team can't use any. Add "*".</Alert>}
+          {onlyExclusions(m.tools) && <Alert color="red" icon={<Icon name="bad" size={16} />}>Tools has only exclusions, so this team can't call any. Add "*".</Alert>}
+        </>
+      ) : <Text size="xs" c="dimmed">No MCP servers are registered (MCP tab).</Text>}
+      <SectionTitle title="What agents bring (Claude Code, Codex, pi)" intro="Their own MCP servers, built-in tools and skills, read from every model request." />
+      <Select {...lbl("Agent tools policy", AH.mode)} allowDeselect={false} value={mode}
+        data={[{ value: "off", label: "Off: don't look" }, { value: "shadow", label: "Shadow: list what agents offer, change nothing" },
+          { value: "enforce", label: "Enforce: leave out what isn't allowed" }]}
+        onChange={(v) => set(["agent_tools", "mode"], v === "off" ? undefined : v)} />
+      {mode !== "off" && (
+        <>
+          <SimpleGrid cols={2}>
+            <TagsInput {...lbl("Their MCP servers", AH.mcp_servers)} description='e.g. "*", "!github". Empty: all.' data={suggest([...new Set([...of("mcp"), ...mcpServers])])}
+              value={a.mcp_servers ?? []} onChange={(v) => set(["agent_tools", "mcp_servers"], globs(v))} clearable />
+            <TagsInput {...lbl("Their other tools", AH.agent_tools)} description='e.g. "*", "!WebFetch". Empty: all.' data={suggest(of("tool"))}
+              value={a.tools ?? []} onChange={(v) => set(["agent_tools", "tools"], globs(v))} clearable />
+            <TagsInput {...lbl("Skills", AH.skills)} description='e.g. "*", "!deploy". Empty: all. "!*": none.' data={suggest(of("skill"))}
+              value={a.skills ?? []} onChange={(v) => set(["agent_tools", "skills"], globs(v))} clearable />
+          </SimpleGrid>
+          <Switch {...lbl("Only MCP servers through this gateway", AH.gateway_mcp_only)} description="Servers an agent connects to directly are left out."
+            checked={!!a.gateway_mcp_only} onChange={(e) => set(["agent_tools", "gateway_mcp_only"], e.currentTarget.checked || undefined)} />
+          {mode === "shadow" && (!ALL(a.mcp_servers) || !ALL(a.tools) || !ALL(a.skills) || a.gateway_mcp_only) && (
+            <Text size="xs" c="dimmed">Shadow: requests are tagged with what would be left out (Reports → Requests), and nothing changes until Enforce.</Text>
+          )}
+          {seen.length > 0 && <Text size="xs" c="dimmed">Seen from this team's agents: {of("mcp").length} MCP servers, {of("tool").length} tools, {of("skill").length} skills (Tools page).</Text>}
+        </>
+      )}
+    </Stack>
+  );
+}
 
 /** The stored mode's settings for one team, with what it holds now and whether the gateway has a key to seal it with. */
 function StoredResponses({ team, set, size, storedKey }: { team: Doc; set: (path: (string | number)[], v: unknown) => void;
@@ -68,9 +127,9 @@ function ServiceNote({ url, status }: { url: unknown; status?: CompressorStatus 
   return null;
 }
 
-function TeamForm({ name, team, models, backends, onChange, service, status, stored }: {
+function TeamForm({ name, team, models, backends, onChange, service, status, stored, mcpServers, seen }: {
   name: string; team: Doc; models: string[]; backends: string[]; onChange: (t: Doc) => void; service: unknown; status?: CompressorStatus | null;
-  stored?: StoredStatus | null;
+  stored?: StoredStatus | null; mcpServers: string[]; seen: AgentToolSeen[];
 }) {
   const set = (path: (string | number)[], v: unknown) => onChange(setIn(team, path, v));
   return (
@@ -114,6 +173,8 @@ function TeamForm({ name, team, models, backends, onChange, service, status, sto
         checked={team.refusal_fallback !== false} onChange={(e) => set(["refusal_fallback"], e.currentTarget.checked ? undefined : false)} />
       <Switch {...lbl("Substitute a model that can't run", H.substitute_unavailable)} description="When a requested model has nowhere to run (for example its GPUs are stopped), use one at least as good for the task instead of failing. Responses say which model was replaced."
         checked={!!team.substitute_unavailable} onChange={(e) => set(["substitute_unavailable"], e.currentTarget.checked || undefined)} />
+      <Divider />
+      <ToolsSection team={team} set={set} mcpServers={mcpServers} seen={seen} />
       <Divider />
       <SectionTitle title="Exploration" intro={SECTION.exploration} />
       <Switch {...lbl("Explore a level down or up", RH.explore_enabled)} description="A few task starts at random, so Reports → Levels can say if a level is too high or too low. Needs the learned router in shadow or route mode."
@@ -230,7 +291,9 @@ function StoredKeys({ value, onChange, stored }: { value: Doc | undefined; onCha
   );
 }
 
-export function TeamsEditor({ draft, setDraft, modelNames, backendNames, compressor, stored }: Props) {
+export function TeamsEditor({ draft, setDraft, modelNames, backendNames, compressor, stored, agentSeen }: Props) {
+  const rawServers = draft.mcp?.servers;
+  const mcpServers: string[] = Array.isArray(rawServers) ? rawServers.map((x: Doc) => x?.name).filter(Boolean) : Object.keys(rawServers ?? {});
   const teams: Doc = draft.teams ?? {};
   const [editing, setEditing] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
@@ -281,7 +344,9 @@ export function TeamsEditor({ draft, setDraft, modelNames, backendNames, compres
                   <Table.Td className="num">{t.max_session_usd != null ? usd(Number(t.max_session_usd)) : "–"}</Table.Td>
                   <Table.Td><Text size="xs" c="dimmed" lineClamp={1}>{(t.allowed_models ?? ["*"]).join(", ")}</Text></Table.Td>
                   <Table.Td>{t.compression?.enabled && <Badge size="xs">compression</Badge>} {t.compression?.model?.enabled && <Badge size="xs">model compression</Badge>}{" "}
-                    {t.response_cache?.enabled && <Badge size="xs">response cache</Badge>}</Table.Td>
+                    {t.response_cache?.enabled && <Badge size="xs">response cache</Badge>}{" "}
+                    {t.agent_tools?.mode && t.agent_tools.mode !== "off" && <Badge size="xs" color={t.agent_tools.mode === "enforce" ? "mo" : "gray"}
+                      title="Agent tools policy">tools: {t.agent_tools.mode}</Badge>}</Table.Td>
                   <Table.Td>{t.stored_responses?.enabled ? <Badge size="sm" color="mo">{t.stored_responses.retention_days ?? "?"} days</Badge>
                     : <Text span size="xs" c="dimmed">off</Text>}{" "}
                     {stored?.teams[n] && (stored.teams[n].responses > 0 || stored.teams[n].conversations > 0) &&
@@ -314,7 +379,8 @@ export function TeamsEditor({ draft, setDraft, modelNames, backendNames, compres
             )}
             {editing !== "default" && rename !== editing && <Alert color="yellow" icon={<Icon name="warn" size={16} />}>People assigned to “{editing}” keep that team name until you move them on the People page or update the Entra mapping.</Alert>}
             <TeamForm name={editing} team={teams[editing] ?? {}} models={modelNames} backends={backendNames} onChange={(t) => save(editing, t)}
-              service={draft.compressor?.url} status={compressor} stored={stored} />
+              service={draft.compressor?.url} status={compressor} stored={stored} mcpServers={mcpServers}
+              seen={agentSeen?.[editing] ?? agentSeen?.default ?? []} />
             <Group justify="space-between" mt="md">
               {editing !== "default" ? <Button color="red" variant="outline" onClick={() => remove(editing)}>Delete team</Button> : <span />}
               <Button onClick={() => setEditing(null)}>Done</Button>

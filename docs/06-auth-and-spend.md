@@ -365,6 +365,54 @@ lists, tool calls and tool results. Servers that only speak stdio need a bridge 
 **Not yet.** OAuth sign-in for agents (they send a key, as for models), the gateway signing in to servers with each
 person's OAuth tokens, one endpoint that joins several servers' tools, and a per-tool limit.
 
+Servers are registered on the console's Configuration page (MCP tab), and each team's access is set in its settings
+(Teams tab, "MCP servers through the gateway"). Both are saved to the configuration and applied within seconds.
+
+## What agents bring: their own MCP servers, tools and skills
+
+Agents also load MCP servers and skills on the person's machine, which the MCP gateway never sees. Every model request
+carries what the agent offers the model, though, so a team's `agent_tools` can limit it there, for Claude Code, Codex
+and pi ([decision 76](09-decisions.md#76-what-agents-bring-limited-in-their-model-requests)):
+
+```yaml
+teams:
+  web:
+    agent_tools:
+      mode: enforce                    # off (default), shadow (list and tag, change nothing) or enforce
+      mcp_servers: ["*", "!personal-*"] # MCP servers by the name the agent gives them
+      gateway_mcp_only: false          # true: only servers reached through this gateway that the team may use
+      tools: ["*", "!WebFetch"]        # the agent's other tools, by name, any case
+      skills: ["*", "!deploy-prod"]    # skills by name; [] or ["!*"]: none
+```
+
+The console sets the same on Configuration → Teams → the team → "What agents bring". With the mode on, the Tools page
+lists what each team's agents offer (MCP servers, tools, skills), when each was last seen, and whether the policy
+leaves it out, so you can choose from what's in use.
+
+**How each agent names them.**
+
+| | Claude Code | Codex | pi |
+|---|---|---|---|
+| MCP tools | `mcp__<server>__<tool>`, also listed by name for ToolSearch (the list and what ToolSearch loads are filtered too) | the same (flat, or a `mcp__<server>__` namespace; both are filtered) | none built in |
+| Skills | a reminder listing `- name: description`, run with the `Skill` tool | `<skills_instructions>`, `### Available skills`, `- name: description (file: …)`; `skills.read` for packaged skills | `<available_skills>` with `<skill><name>…</name>…</skill>`, read with `read` |
+| Other tools | Bash, Read, Edit, Write, WebFetch, Task… | shell, apply_patch, web_search… | read, bash, edit, write |
+
+**What enforce does.** Tools that aren't allowed are left out of the request's tool list (and a `tool_choice` naming
+one goes back to auto), and out of Claude Code's list of deferred tools and what its ToolSearch returns, so they can't
+be found and loaded later; skills that aren't allowed are taken out of the agent's skill list; with no skill allowed, the
+tool that runs skills goes too. Everything else in the request is untouched. The same request gets the same result
+every turn, so the prompt cache's prefix doesn't change; only changing the policy mid-session does, once. Requests
+with something left out are tagged `agent_tools=removed:<n>` (shadow: `would_remove:<n>`), and
+`meritorder_agent_tools_removed_total` counts it by team and kind.
+
+**What it can't do.** It limits what an agent is offered, not what a person can do on their own machine: a skill the
+person names themselves (`/skill`, `$skill`) reaches the model as their own message, an agent can still read a skill's
+file with its file tools, and an MCP server named like an allowed one passes. To make sure agents only use your
+servers, combine `gateway_mcp_only` with what the agent's managed settings enforce on people's machines (Claude Code's
+managed settings, Codex's `requirements.toml`, pushed by an MDM; see each for which MCP and skill controls it has). Codex's tool search, which loads MCP tools later in a
+conversation, is filtered for backends that don't speak the Responses API; a Responses backend gets tool search's
+results as they came. Tested live with Claude Code and Codex (22 Nov 2026); pi's format is tested from its source.
+
 ## People and teams
 
 | What | Where it's managed |
