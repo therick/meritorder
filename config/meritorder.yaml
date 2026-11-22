@@ -506,6 +506,9 @@ teams:
     # Request screening (docs/06-auth-and-spend.md#request-screening): hidden Unicode, keys, and risky tool calls in
     # agents' requests, recorded as ledger tags and metrics. Shadow only: nothing is blocked or changed.
     # screening: {mode: shadow}
+    # Cheaper models instead of a refusal as a budget runs out (docs/06-auth-and-spend.md#budgets): from 80% spent, new
+    # auto tasks go to level-1 models; grace_share lets those go 10% past the team's and people's budgets.
+    # budget_step_down: {at: 0.8, level: 1, grace_share: 0.1}
 
 auth:
   static_keys:

@@ -1069,10 +1069,23 @@ restores any of them, which saves it again as the newest version.</p>
   against every budget, and the ledger tags them <code>explore</code> and <code>explore_from</code>.</li>
 <li>Alerts go out at 80% and 100%; at 100% requests are refused with a 429 that says which budget
   was reached.</li>
-<li>Policy lives alongside budgets, per team: <code>allowed_models</code> and <code>allowed_backends</code>, glob lists
-  with <code>!</code> exclusions. For example <code>allowed_backends: ["*", "!deepseek"]</code> keeps a team's requests off
-  the <code>deepseek</code> backend (DeepSeek's own API).</li>
+<li><strong>Stepping down instead</strong> (opt-in per team, <code>budget_step_down</code>, <a href="decisions.html#74-cheaper-models-as-a-budget-runs-out-not-only-a-refusal-at-100">decision 74</a>):
+  once any budget that applies to a request (the organization's, the team's, the person's, the session's) is <code>at</code>
+  spent (80% by default), new <code>auto</code> and tier tasks go to models at <code>level</code> (1 by default) at most, even above a
+  client's <code>X-Route-Floor</code>. A named model is served as asked, and a task already under way keeps its model (moving it
+  would throw away its prompt cache). The ledger tags those requests <code>budget_step_down</code> (the level), so Breakdown → Tag
+  shows what stepping down covered. At 100% requests are refused as before, unless <code>grace_share</code> lets stepped-down
+  requests go on past the team's and the person's budgets by that share (0.1: 10% more); the organization's budget and
+  <code>max_session_usd</code> stay hard limits.</li>
 </ul>
+<p><code>yaml
+  teams:
+    platform:
+      budget_usd_month: 5000
+      budget_step_down: {at: 0.8, level: 1, grace_share: 0.1}</code>
+- Policy lives alongside budgets, per team: <code>allowed_models</code> and <code>allowed_backends</code>, glob lists
+  with <code>!</code> exclusions. For example <code>allowed_backends: ["*", "!deepseek"]</code> keeps a team's requests off
+  the <code>deepseek</code> backend (DeepSeek's own API).</p>
 <h2 id="limits-that-stop-runaway-spend">Limits that stop runaway spend</h2>
 <div class="table-wrap"><table>
 <thead>

@@ -710,6 +710,7 @@ class Router:
         explore_up: bool = True,
         context: TaskContext | None = None,
         cascade: str | None = None,
+        level_cap: int | None = None,
     ) -> Decision:
         """Pick and rank candidates. ``prompt_tokens`` is the request's estimate (tokens.estimate; a plain number is
         taken as text): each model gets it in its own tokens. ``queue_full`` names saturated backends that also have
@@ -733,7 +734,8 @@ class Router:
         mid-task, if its failures in a row reach routing.cascade.failures_now; "human" at a human message that carries on
         the task (success.continues)."""
         d = self._decide(requested, team, body, headers, session, prompt_tokens, boundary, utilization, now, queue_full, kv,
-                         client=client, batch=batch, explore=explore, explore_up=explore_up, context=context, cascade=cascade)
+                         client=client, batch=batch, explore=explore, explore_up=explore_up, context=context, cascade=cascade,
+                         level_cap=level_cap)
         if d.learned is not None and d.learned.outcome != "named":
             self._other_side(d, team, body, headers, session, prompt_tokens, utilization, now, queue_full, kv, client, batch)
         return d
@@ -800,6 +802,7 @@ class Router:
         context: TaskContext | None = None,
         cascade: str | None = None,
         escalations: int | None = None,
+        level_cap: int | None = None,
     ) -> Decision:
         """``decide`` without the learned router's other side. ``floor_override``: route a new task at this level
         instead of classifying it; ``probe``: count no speed check and log nothing (pricing the other side);
@@ -822,7 +825,8 @@ class Router:
         learned: LearnedCall | None = None
         explored: dict | None = None  # the exploration arm this task start drew (``_explore``)
         canary: str | None = None
-        again_kw = {"floor_override": floor_override, "probe": probe, "client": client, "batch": batch, "context": context}
+        again_kw = {"floor_override": floor_override, "probe": probe, "client": client, "batch": batch, "context": context,
+                    "level_cap": level_cap}
         escalate_note = ""
 
         if auto:
@@ -857,6 +861,10 @@ class Router:
                     if tier is not None and not parse_floor(headers.get("x-route-floor", "")):
                         # A named tier (decision 72): its level, the task from the request unless the tier sets one.
                         floor = Floor(tier.task or floor.task, tier.level, f"tier '{requested}'", explicit=True)
+                    if level_cap is not None and floor.level > level_cap:
+                        # A team's budget step-down (decision 74): a budget that applies is nearly spent, so new tasks go
+                        # to cheaper models. Above the client's own X-Route-Floor too: it's the organization's limit.
+                        floor = Floor(floor.task, level_cap, f"{floor.reason}; capped at {level_cap} by budget_step_down", explicit=True)
                     if explore and not probe and not batch:
                         given = floor
                         floor, explored, canary = self._explore(floor, team, headers, session, now, explore_up)
