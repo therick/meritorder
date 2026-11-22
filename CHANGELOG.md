@@ -7,6 +7,8 @@
   one-time link from the People page, or `meritorder accounts create`), with a session in an HttpOnly cookie. API keys
   are for harnesses and services; one typed into the console opens a session tied to it, and the browser no longer
   stores it. Signing out ends the session on the gateway (decision 69). Needs migration 21 (`meritorder migrate`).
+- The release workflow verifies each image it publishes (signature from this workflow on a tag, SBOM, provenance), and
+  docs/07 says how to verify an image yourself.
 - Budget step-down, per team (`budget_step_down`): from a share of any budget spent, new `auto` and tier tasks go to
   cheaper models instead of being refused at 100%, with an optional grace past the team's and people's budgets;
   tagged `budget_step_down` (decision 74).

@@ -30,7 +30,8 @@ the same license, along with new images.
   install scripts are disabled (`ui/.npmrc`).
 - **Updates:** Renovate waits 7 days before proposing a new release, and CI runs
   `pip-audit` and `npm audit` on every change.
-- **Releases:** container images are multi-arch, signed with Sigstore cosign, and
+- **Releases:** container images are multi-arch, signed with Sigstore cosign (verify them as
+  in docs/07-deployment.md, "Verifying an image"), and
   published with an SBOM and build provenance.
 - **CI actions** are pinned to commit SHAs (Renovate updates them), so a moved tag can't
   change what runs in the release job that signs images.

@@ -80,3 +80,17 @@ jobs:
           cosign sign --yes "${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}"
           cosign sign --yes "${{ steps.image.outputs.name }}@${{ steps.build-gpu.outputs.digest }}"
           cosign sign --yes "${{ steps.image.outputs.name }}@${{ steps.build-compressor.outputs.digest }}"
+      # What users run (docs/07-deployment.md#verifying-an-image): each signature, from this workflow on a v* tag, and each
+      # image's SBOM and provenance attached. A release whose images don't verify fails here.
+      - name: Verify the signatures and attestations
+        env:
+          IDENTITY: ^https://github.com/${{ github.repository }}/\.github/workflows/release\.yml@refs/tags/v
+          ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          for digest in "${{ steps.build.outputs.digest }}" "${{ steps.build-gpu.outputs.digest }}" "${{ steps.build-compressor.outputs.digest }}"; do
+            ref="${{ steps.image.outputs.name }}@$digest"
+            cosign verify --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER" "$ref" > /dev/null
+            docker buildx imagetools inspect "$ref" --format '{{ json .SBOM }}' | grep -q '"SPDX' || { echo "no SBOM on $ref"; exit 1; }
+            docker buildx imagetools inspect "$ref" --format '{{ json .Provenance }}' | grep -q 'SLSA' || { echo "no provenance on $ref"; exit 1; }
+            echo "verified $ref"
+          done
