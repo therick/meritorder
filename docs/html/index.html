@@ -10022,7 +10022,7 @@ These are the rules the repo follows:</p>
 </tr>
 <tr>
 <td><strong>Our releases</strong></td>
-<td><code>.github/workflows/release.yml</code> runs on a pushed <code>v*</code> tag. It builds three images for linux/amd64 and linux/arm64 with Docker Buildx and pushes them to <code>ghcr.io/therick/meritorder</code>, tagged with the version without the <code>v</code>: <code>&lt;version&gt;</code> (the gateway, worker and migrate image), <code>&lt;version&gt;-gpu</code> (adds SkyPilot 0.14.2) and <code>&lt;version&gt;-compressor</code> (adds llmlingua and torch, no SkyPilot). Each also moves its own <code>latest</code>: <code>latest</code>, <code>latest-gpu</code> and <code>latest-compressor</code> (the variants' <code>flavor</code> sets <code>onlatest=true</code>, so the suffix applies to <code>latest</code> too and a variant never overwrites the main image's). Each push carries an SBOM and build provenance (<code>provenance: mode=max</code>) as attestations, and each image digest is signed with cosign, keyless, through GitHub's OIDC token (Sigstore). Every action is pinned to a commit hash. No tag exists yet, so nothing is published. The workflow doesn't publish the Helm chart or a PyPI package: install the chart from <code>charts/meritorder</code> in the repo.</td>
+<td><code>.github/workflows/release.yml</code> runs on a pushed <code>v*</code> tag. It builds three images for linux/amd64 and linux/arm64 with Docker Buildx and pushes them to <code>ghcr.io/therick/meritorder</code>, tagged with the version without the <code>v</code>: <code>&lt;version&gt;</code> (the gateway, worker and migrate image), <code>&lt;version&gt;-gpu</code> (adds SkyPilot 0.14.2) and <code>&lt;version&gt;-compressor</code> (adds llmlingua and torch, no SkyPilot). Each also moves its own <code>latest</code>: <code>latest</code>, <code>latest-gpu</code> and <code>latest-compressor</code> (the variants' <code>flavor</code> sets <code>onlatest=true</code>, so the suffix applies to <code>latest</code> too and a variant never overwrites the main image's). Each push carries an SBOM and build provenance (<code>provenance: mode=max</code>) as attestations, and each image digest is signed with cosign, keyless, through GitHub's OIDC token (Sigstore). Every action is pinned to a commit hash. The workflow then verifies what it published, as below, and fails if a signature, an SBOM or the provenance is missing. The workflow doesn't publish the Helm chart or a PyPI package: install the chart from <code>charts/meritorder</code> in the repo.</td>
 </tr>
 <tr>
 <td><strong>Images</strong></td>
@@ -10033,7 +10033,20 @@ These are the rules the repo follows:</p>
 <td><code>SECURITY.md</code>: report privately through GitHub's private vulnerability reporting.</td>
 </tr>
 </tbody>
-</table></div></section><section id="reporting"><header class="sec-head"><span class="n">08</span><h2>Reporting</h2></header><p>Merit Order exists to save money, so reporting is a core feature: what was spent, what was saved,
+</table></div>
+<h4 id="deployment-verifying-an-image">Verifying an image</h4>
+<p>Before you run an image, check that this repository's release workflow built and signed it, from a <code>v*</code> tag, and look at
+what's inside it. With <a href="https://docs.sigstore.dev/cosign/system_config/installation/">cosign</a> 2 and Docker Buildx:</p>
+<pre><code class="language-bash">IMAGE=ghcr.io/therick/meritorder:0.0.1      # or -gpu, -compressor; better, the digest (…@sha256:…) you deploy
+cosign verify &quot;$IMAGE&quot; \
+  --certificate-identity-regexp '^https://github.com/therick/meritorder/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+docker buildx imagetools inspect &quot;$IMAGE&quot; --format '{{ json .SBOM }}'        # the packages inside (SPDX)
+docker buildx imagetools inspect &quot;$IMAGE&quot; --format '{{ json .Provenance }}'  # how and from which commit it was built (SLSA)
+</code></pre>
+<p><code>cosign verify</code> fails unless the signature comes from that workflow file in this repository on a version tag, so an
+image built anywhere else (a fork, a developer's machine) doesn't pass. Kubernetes clusters can require it at admission
+with Sigstore's policy-controller or Kyverno's <code>verifyImages</code>, using the same identity and issuer.</p></section><section id="reporting"><header class="sec-head"><span class="n">08</span><h2>Reporting</h2></header><p>Merit Order exists to save money, so reporting is a core feature: what was spent, what was saved,
 why, by whom, and when.</p>
 <h3 id="reporting-data-flow">Data flow</h3>
 <figure class="diagram"><pre class="mermaid">flowchart LR
