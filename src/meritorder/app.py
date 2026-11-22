@@ -32,6 +32,7 @@ from .console import build_router as build_console_router
 from .scim import build_router as build_scim_router
 from .stored.api import build_router as build_stored_router
 from .controls import build_router as build_controls_router
+from .mcp import build_mcp_router
 from .google_groups import follow as follow_google_groups
 from .guards import BodyLimit, SecurityHeaders, max_body_bytes
 from .telemetry import setup_tracing
@@ -153,6 +154,8 @@ def create_app(cfg: Config | None = None, gateway: Gateway | None = None) -> Fas
             await b.close()
         if gw.compressor is not None:
             await gw.compressor.close()
+        if gw._mcp is not None:
+            await gw._mcp.close()
         await gw.state.close()
         await gw.store.close()
 
@@ -287,6 +290,8 @@ def create_app(cfg: Config | None = None, gateway: Gateway | None = None) -> Fas
                 "route_listing": {"path": "/v1/routes", "tiers": sorted(n for n in gw.cfg.tiers if gw.cfg.tier(n) is not None)},
                 "data_policy_enforcement": {"allowed_providers_header": datapolicy.PROVIDERS_HEADER,
                                             "zero_retention_header": datapolicy.ZERO_RETENTION_HEADER, "refusal": "403 data_policy"},
+                "mcp_gateway": {"path": "/mcp/<server>", "servers": "/v1/mcp/servers", "transport": "streamable_http",
+                                "servers_registered": len([s for s in gw.cfg.mcp.servers if s.enabled])},
                 "health": "/readyz",
             },
         }
@@ -354,6 +359,7 @@ def create_app(cfg: Config | None = None, gateway: Gateway | None = None) -> Fas
     app.include_router(build_console_router(gw))
     app.include_router(build_scim_router(gw))
     app.include_router(build_controls_router(gw))
+    app.include_router(build_mcp_router(gw))
 
     if (UI_DIR / "index.html").exists():
         app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")

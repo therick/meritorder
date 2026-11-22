@@ -47,6 +47,11 @@ def secret_problems(raw: dict) -> list[str]:
             problems.append("reporting.clickhouse.auth.value holds a literal password; use value_env or value_file")
         if re.match(r"^https?://[^/]*:[^/]*@", str(ch.get("url") or "")):
             problems.append("reporting.clickhouse.url holds a password; set user, and the password with auth.value_env or value_file")
+    servers = (raw.get("mcp") or {}).get("servers") if isinstance(raw.get("mcp"), dict) else None
+    for name, srv in (servers.items() if isinstance(servers, dict) else enumerate(servers or [])):
+        value = ((srv or {}).get("auth") or {}).get("value") if isinstance((srv or {}).get("auth"), dict) else None
+        if value and not _ENV_REF.match(str(value)):
+            problems.append(f"mcp.servers.{name}.auth.value holds a literal secret; use value_env (MERITORDER_MCP_<NAME>)")
     problems.extend(_secret_refs(raw, ""))
     return problems
 
@@ -74,6 +79,8 @@ _OWN_SECRETS: list[tuple[re.Pattern, frozenset[str], tuple[str, ...]]] = [
     (re.compile(r"^batches\.(key|previous_key)_(env|file)$"), frozenset({"MERITORDER_BATCH_KEY", "MERITORDER_BATCH_KEY_PREVIOUS"}), ()),
     (re.compile(r"^response_store\.(key|old_keys)_(env|file)$"),
      frozenset({"MERITORDER_RESPONSES_KEY", "MERITORDER_RESPONSES_OLD_KEYS"}), ()),
+    # An MCP server's credential (mcp.py): MERITORDER_MCP_<NAME>, sent only to that server.
+    (re.compile(r"^mcp\.servers(\[\d+\]|\.[^.]+)\.auth\.value(_env|_file)?$"), frozenset(), ("MERITORDER_MCP_",)),
     # A static key's value is only compared with callers' keys, never sent or shown, so any variable may hold it.
     (re.compile(r"^auth\.static_keys\[\d+\]\.key(_env)?$"), frozenset(), ("",)),
 ]
@@ -96,7 +103,8 @@ SECRETS_DIR_VAR = "MERITORDER_SECRETS_DIR"  # where *_file fields may read from 
 DEFAULT_SECRETS_DIR = "/run/secrets/meritorder"
 _ENV_ANY = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)")
 _LITERAL_PLACES = re.compile(r"^backends\.[^.]+\.auth\.value$|^auth\.static_keys\[\d+\]\.key$|^auth\.oidc\.public_client_secret$"
-                             r"|^reporting\.clickhouse\.auth\.value$|^billing\.sources(\[\d+\]|\.[^.]+)\.auth\.value$")
+                             r"|^reporting\.clickhouse\.auth\.value$|^billing\.sources(\[\d+\]|\.[^.]+)\.auth\.value$"
+                             r"|^mcp\.servers(\[\d+\]|\.[^.]+)\.auth\.value$")
 _NOT_SECRET_FILES = frozenset({"prices_file"})
 
 

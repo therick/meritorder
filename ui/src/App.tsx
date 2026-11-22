@@ -12,6 +12,7 @@ import { Backends, Models } from "./pages/Infra";
 import { Gpus } from "./pages/Gpus";
 import { Controls } from "./pages/Controls";
 import { Reports } from "./pages/Reports";
+import { Tools } from "./pages/Tools";
 import { SourceFooter } from "./components/SourceFooter";
 import { PeopleContext } from "./people";
 import { BrandMark, Icon } from "./components/icons";
@@ -51,6 +52,7 @@ const PAGES: Page[] = [
   { id: "teams", label: "Teams", roles: ["admin", "finance", "team_lead"] },
   { id: "people", label: "People", roles: ["admin", "team_lead"] },
   { id: "keys", label: "Keys", roles: ["admin", "team_lead"] },
+  { id: "tools", label: "Tools", roles: ["admin", "team_lead"] },
   { id: "config", label: "Config", roles: ["admin"] },
   { id: "me", label: "My usage", roles: ["admin", "finance", "team_lead", "user"] },
 ];
@@ -179,6 +181,7 @@ export default function App() {
           {active === "models" && <Models api={api} me={me.data} />}
           {active === "teams" && <Teams api={api} me={me.data} onNavigate={go} />}
           {active === "keys" && <Keys api={api} me={me.data} />}
+          {active === "tools" && <Tools api={api} me={me.data} />}
           {active === "config" && <ConfigPage api={api} />}
           {active === "people" && <People api={api} me={me.data} />}
           {active === "me" && <MyUsage me={me.data} />}

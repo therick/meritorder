@@ -763,8 +763,27 @@ class ScreeningConfig(BaseModel):
     mode: Literal["off", "shadow"] = "off"
 
 
+class TeamMcp(BaseModel):
+    """What a team may use through the MCP gateway (mcp.py, decision 75)."""
+
+    servers: list[str] = ["*"]  # registered servers it may connect to: globs, with !exclusions
+    # Tools it may see and call, as "server/tool" globs with !exclusions, e.g. ["*", "!github/delete_*"].
+    tools: list[str] = ["*"]
+    calls_per_minute: int | None = Field(default=None, ge=1)  # each person's tool calls, across servers; None: no limit
+    # Keys (screening.SECRETS) in tool arguments and results. shadow records them; block refuses a call whose arguments
+    # carry one and replaces one in a result with a marker; off doesn't look.
+    secrets: Literal["off", "shadow", "block"] = "shadow"
+
+    def allows_server(self, server: str) -> bool:
+        return _allowed(server, self.servers)
+
+    def allows_tool(self, server: str, tool: str) -> bool:
+        return _allowed(server, self.servers) and _allowed(f"{server}/{tool}", self.tools)
+
+
 class TeamConfig(BaseModel):
     name: str = ""
+    mcp: TeamMcp = TeamMcp()
     compression: CompressionConfig = CompressionConfig()
     screening: ScreeningConfig = ScreeningConfig()
     budget_step_down: BudgetStepDown | None = None  # off unless set (decision 74)
@@ -1520,6 +1539,85 @@ class ConsoleConfig(BaseModel):
         return v
 
 
+class McpAuth(BaseModel):
+    """How the gateway signs in to an MCP server. The caller's Merit Order key is never sent on.
+
+    * none: no credential (an internal server on a private network)
+    * api_key: the gateway's own credential for the server, from value_env or value_file (as a backend's)
+    * forward: each caller's own credential for the server, which they send in ``forward_header`` (for servers that
+      act as the person, e.g. a personal access token); the gateway sends it on in ``header``
+    """
+
+    type: Literal["none", "api_key", "forward"] = "none"
+    header: str = "authorization"
+    prefix: str | None = None  # defaults to "Bearer " for the authorization header
+    value_env: str | None = None
+    value_file: str | None = None
+    value: str | None = None  # a literal (prefer value_env)
+    forward_header: str = "x-meritorder-mcp-authorization"
+
+    def key(self) -> str | None:
+        if self.value:
+            return self.value
+        if self.value_file:
+            key = read_secret_file(self.value_file)
+            if key:
+                return key
+        if self.value_env:
+            return os.environ.get(self.value_env) or None
+        return None
+
+    def with_prefix(self, value: str) -> str:
+        prefix = self.prefix if self.prefix is not None else ("Bearer " if self.header.lower() == "authorization" else "")
+        return value if prefix and value.lower().startswith(prefix.lower()) else prefix + value
+
+
+class McpServerConfig(BaseModel):
+    """An MCP server reached through the gateway at /mcp/<name> (Streamable HTTP)."""
+
+    name: str
+    url: str
+    description: str = ""
+    enabled: bool = True
+    auth: McpAuth = McpAuth()
+    headers: dict[str, str] = {}  # more fixed headers to send (not secrets: they're shown on the console)
+    timeout_seconds: float = Field(default=300.0, gt=0)  # longest wait for a response, or between events of a stream
+    # Tool definitions are pinned when first seen (a hash of each one's name, description and schemas). shadow records a
+    # change; enforce also hides a changed tool, and refuses calls to it, until an admin approves the new definition.
+    pinning: Literal["off", "shadow", "enforce"] = "shadow"
+    # allow: a tool first seen is pinned as it is; hold: it's hidden until an admin approves it (with pinning enforce).
+    new_tools: Literal["allow", "hold"] = "allow"
+    # Its results are other people's words (web pages, tickets, email): request screening then marks an agent's session
+    # as having read untrusted content when a result of one of its tools (mcp__<name>__*) comes back.
+    untrusted_content: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", v):
+            raise ValueError(f"MCP server name {v!r}: use letters, digits, '_', '-' or '.' (it's part of the URL)")
+        return v
+
+    @field_validator("url")
+    @classmethod
+    def _url(cls, v: str) -> str:
+        if not re.match(r"^https?://[^/\s]+", v):
+            raise ValueError(f"MCP server url {v!r} must be an http(s) URL")
+        if re.match(r"^https?://[^/@]*:[^/@]*@", v):
+            raise ValueError("an MCP server url can't hold a password; use auth")
+        return v
+
+
+class McpConfig(BaseModel):
+    """The MCP gateway (mcp.py, decision 75): registered servers, and how long the tool-call log is kept."""
+
+    servers: list[McpServerConfig] = []
+    log_days: int = Field(default=90, ge=1)
+
+    def server(self, name: str) -> McpServerConfig | None:
+        return next((s for s in self.servers if s.name == name and s.enabled), None)
+
+
 class Config(BaseModel):
     backends: list[BackendConfig]
     models: list[ModelConfig]
@@ -1538,6 +1636,7 @@ class Config(BaseModel):
     batches: BatchesConfig = BatchesConfig()  # the providers' batch APIs: work that can wait, at about half price
     # The keys for what teams in the Responses API's stored mode keep (teams' stored_responses turns it on).
     response_store: ResponseStoreConfig = ResponseStoreConfig()
+    mcp: McpConfig = McpConfig()  # the MCP gateway: tool servers agents reach through Merit Order
     console: ConsoleConfig = ConsoleConfig()  # the source link the console and GET /about show
     # Only for models whose output limit isn't known (max_output_tokens unset and not in prices.json): what to
     # send to Anthropic-format backends, which require a limit, when the client doesn't set one.
@@ -1848,6 +1947,8 @@ def build_config(raw: dict, config_dir: str | Path = ".", prices_data: dict | No
         raw["teams"] = _named(raw.get("teams"))
     if isinstance(raw.get("billing"), dict):
         raw["billing"] = {**raw["billing"], "sources": _named(raw["billing"].get("sources"))}
+    if isinstance(raw.get("mcp"), dict):
+        raw["mcp"] = {**raw["mcp"], "servers": _named(raw["mcp"].get("servers"))}
     cfg = Config.model_validate(raw)
     _disable_unusable_backends(cfg, quiet)
     cfg.config_dir = str(Path(config_dir).resolve())

@@ -520,6 +520,60 @@ class MemoryStore(MemoryBatches, MemoryStored):
         self.__dict__.setdefault("totp", {})[user_id] = {"secret": secret, "enabled_at": datetime.now(UTC) if enabled else None,
                                                           "codes": list(recovery_codes or [])}
 
+    # The MCP gateway (mcp.py): pinned tool definitions and the tool-call log.
+
+    async def mcp_pins(self, server: str | None = None) -> list[dict]:
+        rows = self.__dict__.setdefault("_mcp_tools", {})
+        return [dict(r) for (srv, _), r in sorted(rows.items()) if server is None or srv == server]
+
+    async def mcp_pin(self, server: str, name: str, hash_: str, definition: dict, approve: bool) -> dict:
+        rows = self.__dict__.setdefault("_mcp_tools", {})
+        now = datetime.now(UTC)
+        r = rows.get((server, name))
+        if r is None:
+            r = rows[(server, name)] = {"server": server, "name": name, "hash": hash_, "definition": definition, "first_seen": now,
+                                        "approved_hash": hash_ if approve else None,
+                                        "approved_definition": definition if approve else None, "changed_at": None,
+                                        "approved_by": None, "approved_at": None}
+        elif r["hash"] != hash_:
+            r.update(hash=hash_, definition=definition, changed_at=now)
+        return dict(r)
+
+    async def mcp_approve(self, server: str, name: str, hash_: str, by: str) -> bool:
+        r = self.__dict__.setdefault("_mcp_tools", {}).get((server, name))
+        if r is None or r["hash"] != hash_:
+            return False
+        r.update(approved_hash=hash_, approved_definition=r["definition"], approved_by=by, approved_at=datetime.now(UTC))
+        return True
+
+    async def mcp_log(self, row: dict) -> None:
+        log_ = self.__dict__.setdefault("_mcp_calls", [])
+        log_.append({"id": len(log_) + 1, "ts": datetime.now(UTC), "findings": {}, **row})
+
+    async def mcp_calls(self, limit: int = 100, server: str | None = None, team: str | None = None,
+                        since: datetime | None = None) -> list[dict]:
+        rows = [r for r in self.__dict__.get("_mcp_calls", []) if (server is None or r["server"] == server)
+                and (team is None or r.get("team") == team) and (since is None or r["ts"] >= since)]
+        return [dict(r) for r in reversed(rows)][:limit]
+
+    async def mcp_call_counts(self, since: datetime, team: str | None = None) -> list[dict]:
+        out: dict[tuple, dict] = {}
+        for r in await self.mcp_calls(10**9, team=team, since=since):
+            k = (r["server"], r["tool"], r["status"])
+            o = out.setdefault(k, {"server": k[0], "tool": k[1], "status": k[2], "calls": 0, "ms": 0, "timed": 0})
+            o["calls"] += 1
+            if r.get("duration_ms") is not None:
+                o["ms"] += r["duration_ms"]
+                o["timed"] += 1
+        return [{**{k: v for k, v in o.items() if k not in ("ms", "timed")},
+                 "avg_ms": round(o["ms"] / o["timed"]) if o["timed"] else None} for o in out.values()]
+
+    async def purge_mcp_calls(self, before: datetime) -> int:
+        rows = self.__dict__.setdefault("_mcp_calls", [])
+        kept = [r for r in rows if r["ts"] >= before]
+        self._mcp_calls = kept
+        return len(rows) - len(kept)
+
     async def use_recovery_code(self, user_id: str, code_hash: str) -> bool:
         t = self.__dict__.setdefault("totp", {}).get(user_id) or {}
         if code_hash in (t.get("codes") or []):
@@ -1327,10 +1381,44 @@ ALTER TABLE local_credentials ADD COLUMN IF NOT EXISTS totp_secret text;
 ALTER TABLE local_credentials ADD COLUMN IF NOT EXISTS totp_enabled_at timestamptz;
 ALTER TABLE local_credentials ADD COLUMN IF NOT EXISTS recovery_codes jsonb NOT NULL DEFAULT '[]';
 """
+# The MCP gateway (decision 75): each server's tool definitions as pinned (the hash an admin approved, and the one last
+# seen), and the tool-call log (who called what, how it went; never the arguments or results).
+SCHEMA_V24 = """
+CREATE TABLE IF NOT EXISTS mcp_tools (
+    server text NOT NULL,
+    name text NOT NULL,
+    hash text NOT NULL,
+    approved_hash text,
+    definition jsonb NOT NULL DEFAULT '{}',
+    approved_definition jsonb,
+    first_seen timestamptz NOT NULL DEFAULT now(),
+    changed_at timestamptz,
+    approved_by text,
+    approved_at timestamptz,
+    PRIMARY KEY (server, name)
+);
+CREATE TABLE IF NOT EXISTS mcp_calls (
+    id bigserial PRIMARY KEY,
+    ts timestamptz NOT NULL DEFAULT now(),
+    server text NOT NULL,
+    tool text NOT NULL,
+    user_id text,
+    team text,
+    key_id text,
+    status text NOT NULL,
+    reason text,
+    duration_ms integer,
+    request_bytes integer,
+    response_bytes integer,
+    findings jsonb NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS mcp_calls_ts ON mcp_calls (ts);
+CREATE INDEX IF NOT EXISTS mcp_calls_team_ts ON mcp_calls (team, ts);
+"""
 MIGRATIONS = [(1, SCHEMA_V1), (2, SCHEMA_V2), (3, SCHEMA_V3), (4, SCHEMA_V4), (5, SCHEMA_V5), (6, SCHEMA_V6), (7, SCHEMA_V7),
               (8, SCHEMA_V8), (9, SCHEMA_V9), (10, SCHEMA_V10), (11, SCHEMA_V11), (12, SCHEMA_V12), (13, SCHEMA_V13),
               (14, SCHEMA_V14), (15, SCHEMA_V15), (16, SCHEMA_V16), (18, SCHEMA_V18), (19, SCHEMA_V19),
-              (20, SCHEMA_V20), (21, SCHEMA_V21), (22, SCHEMA_V22), (23, SCHEMA_V23)]
+              (20, SCHEMA_V20), (21, SCHEMA_V21), (22, SCHEMA_V22), (23, SCHEMA_V23), (24, SCHEMA_V24)]
 EVAL_RUN_FIELDS = ("status", "progress", "scores", "results", "error", "cost", "started_at", "finished_at", "applied_version")
 
 _SUMS_SQL = ", ".join(f"coalesce(sum({f}), 0) AS {f}" for f in SUM_FIELDS)
@@ -1591,6 +1679,57 @@ class PostgresStore(PostgresBatches, PostgresStored):
         async with self.pool.acquire() as c:
             await c.execute("""UPDATE local_credentials SET totp_secret=$2, totp_enabled_at=CASE WHEN $3 THEN now() END,
                                recovery_codes=$4, updated_at=now() WHERE user_id=$1""", user_id, secret, enabled, list(recovery_codes or []))
+
+    # The MCP gateway (mcp.py): pinned tool definitions and the tool-call log.
+
+    async def mcp_pins(self, server: str | None = None) -> list[dict]:
+        async with self.pool.acquire() as c:
+            rows = await c.fetch("SELECT * FROM mcp_tools WHERE ($1::text IS NULL OR server=$1) ORDER BY server, name", server)
+        return [dict(r) for r in rows]
+
+    async def mcp_pin(self, server: str, name: str, hash_: str, definition: dict, approve: bool) -> dict:
+        """Pins a tool first seen (approved at once unless it must wait for an admin), or records a new definition."""
+        async with self.pool.acquire() as c:
+            row = await c.fetchrow("""INSERT INTO mcp_tools (server, name, hash, definition, approved_hash, approved_definition)
+                                      VALUES ($1, $2, $3, $4, CASE WHEN $5 THEN $3 END, CASE WHEN $5 THEN $4::jsonb END)
+                                      ON CONFLICT (server, name) DO UPDATE SET hash=EXCLUDED.hash, definition=EXCLUDED.definition,
+                                          changed_at=CASE WHEN mcp_tools.hash <> EXCLUDED.hash THEN now() ELSE mcp_tools.changed_at END
+                                      RETURNING *""", server, name, hash_, definition, approve)
+        return dict(row)
+
+    async def mcp_approve(self, server: str, name: str, hash_: str, by: str) -> bool:
+        """Approves the definition an admin saw (its hash), so one that changed again since isn't approved unseen."""
+        async with self.pool.acquire() as c:
+            res = await c.execute("""UPDATE mcp_tools SET approved_hash=hash, approved_definition=definition, approved_by=$4,
+                                     approved_at=now() WHERE server=$1 AND name=$2 AND hash=$3""", server, name, hash_, by)
+        return res.endswith("1")
+
+    async def mcp_log(self, row: dict) -> None:
+        cols = ("server", "tool", "user_id", "team", "key_id", "status", "reason", "duration_ms", "request_bytes", "response_bytes",
+                "findings")
+        async with self.pool.acquire() as c:
+            await c.execute(f"INSERT INTO mcp_calls ({', '.join(cols)}) VALUES ({', '.join(f'${i + 1}' for i in range(len(cols)))})",
+                            *[row.get(k) if k != "findings" else (row.get(k) or {}) for k in cols])
+
+    async def mcp_calls(self, limit: int = 100, server: str | None = None, team: str | None = None,
+                        since: datetime | None = None) -> list[dict]:
+        async with self.pool.acquire() as c:
+            rows = await c.fetch("""SELECT * FROM mcp_calls WHERE ($2::text IS NULL OR server=$2) AND ($3::text IS NULL OR team=$3)
+                                    AND ($4::timestamptz IS NULL OR ts >= $4) ORDER BY ts DESC, id DESC LIMIT $1""",
+                                 limit, server, team, since)
+        return [dict(r) for r in rows]
+
+    async def mcp_call_counts(self, since: datetime, team: str | None = None) -> list[dict]:
+        async with self.pool.acquire() as c:
+            rows = await c.fetch("""SELECT server, tool, status, count(*) AS calls, round(avg(duration_ms))::int AS avg_ms
+                                    FROM mcp_calls WHERE ts >= $1 AND ($2::text IS NULL OR team=$2)
+                                    GROUP BY 1, 2, 3""", since, team)
+        return [{**dict(r), "calls": int(r["calls"])} for r in rows]
+
+    async def purge_mcp_calls(self, before: datetime) -> int:
+        async with self.pool.acquire() as c:
+            res = await c.execute("DELETE FROM mcp_calls WHERE ts < $1", before)
+        return int(res.split()[-1])
 
     async def use_recovery_code(self, user_id: str, code_hash: str) -> bool:
         """Removes the code if it's there: true once per code, even with two sign-ins at the same moment."""

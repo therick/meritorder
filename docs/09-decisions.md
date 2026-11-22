@@ -2219,3 +2219,34 @@ budget should mean what it says unless the team decides otherwise.
 
 **Revisit if:** teams want named models stepped down to the nearest cheaper model, or a second step (level 2 at 80%,
 level 1 at 95%).
+
+## 75. An MCP gateway: servers registered once, reached with a Merit Order key, tools pinned
+
+**Why:** Agents get their tools from MCP servers, and each person wiring up each server with their own tokens leaves
+an organization with no record of what its agents call and no say over which tools they get. Other gateways (LiteLLM,
+Kong, Azure API Management, agentgateway) ship an MCP gateway; it was the largest gap in a survey of other gateways (November 2026). Tool
+traffic is also where the attacks that work against agents land: a server that rewrites a tool's description after
+it's been trusted (the "rug pull" Invariant's MCP-Scan pins against), descriptions that address the model, and keys
+sent to or returned by a tool.
+
+**How:** `mcp.servers` registers each server with the gateway's credential for it (or `forward`, each person's own),
+and `/mcp/<server>` proxies MCP's Streamable HTTP transport. Callers sign in with their Merit Order key, as for models,
+and the key is never sent on (MCP forbids passing a client's token through). A team's `mcp.servers` and `mcp.tools`
+globs decide what it sees and can call; tool lists are filtered rather than calls only refused, so the agent never
+plans around a tool it can't use. Each tool's definition is hashed when first seen (trust on first use); a change is
+recorded, and with `pinning: enforce` the tool is hidden and its calls refused until an admin approves the new
+definition, having seen both. `secrets: block` refuses calls whose arguments carry a key and replaces keys in results.
+A refusal is a tool result with `isError`, which the agent reads and can explain, not a protocol error. A server's
+session ID is bound to the person who opened it. Every call is logged without its arguments or results, like request
+screening keeps only kinds. Messages otherwise pass through unchanged, event streams included, so nothing the
+protocol adds later breaks.
+
+**Not chosen:** One endpoint joining every server's tools: it would make the gateway an MCP server with its own
+sessions and tool-name prefixes, while per-server endpoints keep each server's own behaviour. OAuth for agents: they
+already hold a Merit Order key, and the gateway's OIDC providers (Entra, Google) don't offer the dynamic client
+registration MCP clients expect. Brokering each person's OAuth tokens to servers: a token store and consent flows,
+worth it once teams need servers that act as each person and `forward` isn't enough. Running stdio servers in the
+gateway: running other people's code next to the gateway's credentials. A detector on tool results: as for request
+screening (decision 71), the fixed rules can be measured first.
+
+**Revisit if:** teams want one MCP endpoint for all their tools, servers that need per-person OAuth, or a limit per tool.

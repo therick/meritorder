@@ -13,7 +13,8 @@ Checked, with fixed rules and no model (the research behind the choice is in dec
 * **Risky tool calls** in shell commands and file edits: piping a download into a shell, uploading data with curl or
   wget, DNS lookups with command substitution (a known way to leak data), reading credential files, and writing agent,
   editor, git-hook or shell start-up configuration.
-* **Untrusted content**: a result from a web fetch or search. From then on the session is marked, and risky tool calls
+* **Untrusted content**: a result from a web fetch or search, or from a tool of an MCP server registered as carrying
+  other people's words (``mcp.servers.<name>.untrusted_content``). From then on the session is marked, and risky tool calls
   are also counted as ``after_untrusted``: the pattern of prompt injection, where text an agent reads tells it what to do.
 * **Image links with data** in the model's own text: Markdown images whose URL carries a query, a common exfiltration
   channel when a client renders them.
@@ -169,11 +170,13 @@ def _hidden(text: str, found: dict[str, int]) -> None:
             found[kind] = found.get(kind, 0) + 1
 
 
-def scan(body: dict, since: int, untrusted: bool = False) -> tuple[dict[str, int], bool]:
+def scan(body: dict, since: int, untrusted: bool = False, untrusted_prefixes: tuple[str, ...] = ()) -> tuple[dict[str, int], bool]:
     """Findings in the messages after the first ``since``: kind -> count, and whether the session has read untrusted
     content (``untrusted`` is what it had before this request). Kinds: unicode_tags, unicode_bidi, unicode_invisible,
     secret_in_prompt, secret_in_tool_call, the shell rules (pipe_to_shell, upload, dns_exfil, credential_read,
-    config_write), md_image_url, untrusted_content, and after_untrusted for each risky one once the session is marked."""
+    config_write), md_image_url, untrusted_content, and after_untrusted for each risky one once the session is marked.
+    ``untrusted_prefixes``: tool names (lowercased) whose results also count as untrusted content, such as the tools of an
+    MCP server registered with untrusted_content (``mcp__<server>__``)."""
     msgs = _messages(body)
     new = msgs[since:] if 0 <= since <= len(msgs) else []
     found: dict[str, int] = {}
@@ -217,7 +220,8 @@ def scan(body: dict, since: int, untrusted: bool = False) -> tuple[dict[str, int
                 risky += 1
         if role in ("user", "tool", "system", "developer"):
             for tool, result in _results(m, names):
-                if UNTRUSTED_TOOLS.search(tool) or tool.startswith("mcp__") and "fetch" in tool:
+                if UNTRUSTED_TOOLS.search(tool) or tool.startswith("mcp__") and "fetch" in tool or \
+                        untrusted_prefixes and tool.startswith(untrusted_prefixes):
                     add("untrusted_content")
                     untrusted = True
             if _secrets(text):

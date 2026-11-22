@@ -11,7 +11,7 @@ import asyncio
 import logging
 import os
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from .alerts import check_budgets, check_spikes, check_unpriced, weekly_digest
 from .batches.poller import BatchPoller, WorkerContext, batch_loop, serve_metrics
@@ -123,6 +123,7 @@ async def run_worker(once: bool = False, interval: int = 60, cfg: Config | None 
                 await router.maybe(cfg, store, state)
                 await benchmark.maybe(cfg, store, state, raw=((await store.active_config()) or {}).get("body") or follower.file_raw)
                 await maintain_stored(stored, cfg)
+                await store.purge_mcp_calls(datetime.now(UTC) - timedelta(days=cfg.mcp.log_days))  # the MCP tool-call log
                 if once_batches is not None:
                     await once_batches.use(cfg)
                     await BatchPoller(once_batches).run_once()

@@ -25,6 +25,7 @@ const ADMIN_PAGES: [string, string, RegExp | string][] = [
   ["teams", "Teams", "Teams & budgets"],
   ["people", "People", "People"],
   ["keys", "Keys", "API keys"],
+  ["tools", "Tools", "Tools"],
   ["config", "Config", "Configuration"],
   ["me", "My usage", "My usage"],
 ];
