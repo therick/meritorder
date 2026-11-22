@@ -31,6 +31,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -367,8 +368,10 @@ class McpGateway:
         if srv is None:
             return _error(404, f"no MCP server named '{name}' is registered")
         origin = request.headers.get("origin")
-        if origin and origin.rstrip("/") != f"{request.url.scheme}://{request.headers.get('host', '')}":
-            return _error(403, "requests from other sites aren't accepted")
+        if origin:  # MCP requires checking it (DNS rebinding): only this gateway's own pages, as for the console
+            host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+            if origin == "null" or urlsplit(origin).netloc.lower() != host.split(",")[0].strip().lower():
+                return _error(403, "requests from other sites aren't accepted")
         headers = {k.lower(): v for k, v in request.headers.items()}
         try:
             if not bearer_token(headers):

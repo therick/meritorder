@@ -140,6 +140,8 @@ async def test_unknown_server_other_sites_and_teams_without_access(client, mcp, 
     assert (await post(client, "nope", rpc("initialize"))).status_code == 404
     r = await post(client, "docs", rpc("initialize"), origin="https://evil.example")
     assert r.status_code == 403
+    r = await post(client, "docs", rpc("initialize"), origin="https://test")  # this gateway, behind a TLS proxy
+    assert r.status_code == 200
 
 
 async def test_tools_a_team_may_not_use_are_hidden_and_refused(client, mcp, fake, gateway):
