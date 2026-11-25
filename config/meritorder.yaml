@@ -23,6 +23,7 @@ baseline_model: claude-sonnet
 include:
   - models-open.yaml
   - models-embeddings.yaml
+  - models-ocr.yaml
 
 default_max_tokens: 16000
 
@@ -271,6 +272,7 @@ kubernetes:
 #   standard: {level: 3}
 #   cheap: {level: 1}
 #   embed: {kind: embedding}
+#   ocr: {kind: ocr}             # the cheapest priced OCR model; or {kind: ocr, model: mistral-ocr}
 
 models:
   # --- frontier

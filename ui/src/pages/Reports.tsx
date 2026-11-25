@@ -167,6 +167,7 @@ function Breakdown({ api, range, me, initial }: { api: Api; range: Range; me: Me
   const res = useData(() => api.summary(range, groupBy), [api, range.start, range.end, groupBy]);
   const rows = useMemo(() => [...(res.data?.rows ?? [])].sort((a, b) => b.actual_cost - a.actual_cost), [res.data]);
   const gpus = rows.some((r) => r.gpu_cost);  // the APIs and GPUs columns, when anything ran on GPUs
+  const pages = rows.some((r: Row) => (r.pages ?? 0) > 0);  // OCR pages, shown once there are any
   return (
     <Panel title="Breakdown" right={<Group gap="sm" wrap="nowrap"><AnsweredBy by={res.data?.answered_by} />
       <Button size="xs" variant="default" leftSection={<Icon name="down" size={12} />} onClick={() => api.downloadCsv(range, groupBy)}>Download CSV</Button></Group>}>
@@ -184,6 +185,7 @@ function Breakdown({ api, range, me, initial }: { api: Api; range: Range; me: Me
               {gpus && <><Table.Th ta="right">APIs</Table.Th><Table.Th ta="right">GPUs</Table.Th></>}
               <Table.Th ta="right">Without Merit Order</Table.Th><Table.Th ta="right">Saved</Table.Th><Table.Th ta="right">Saved %</Table.Th>
               <Table.Th ta="right">Cache hits</Table.Th><Table.Th ta="right">Tokens</Table.Th>
+              {pages && <Table.Th ta="right" title="Pages read by OCR (/v1/ocr)">Pages</Table.Th>}
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -198,6 +200,7 @@ function Breakdown({ api, range, me, initial }: { api: Api; range: Range; me: Me
                 <Table.Td className="num">{pct(savingsRate(r))}</Table.Td>
                 <Table.Td className="num">{pct(cacheHitRate(r))}</Table.Td>
                 <Table.Td className="num">{compact(r.input_tokens + r.cache_read_tokens + r.cache_write_tokens + r.output_tokens)}</Table.Td>
+                {pages && <Table.Td className="num">{r.pages ? compact(r.pages) : "–"}</Table.Td>}
               </Table.Tr>
             ))}
           </Table.Tbody>

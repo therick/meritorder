@@ -241,6 +241,9 @@ Messages API endpoint (`bedrock-mantle`), not that one.
 `/v1/messages/count_tokens` refuses a model that isn't configured with a 404, as `/v1/messages` does; `auto` (or no model)
 counts for the models the team can use.
 
+OCR (`/v1/ocr`, Mistral's OCR API or a multipart upload) is routed like embeddings and priced per page:
+[03, Routing](03-routing.md#ocr).
+
 ## Batches: work that can wait
 
 Every provider here charges less for requests that can wait up to 24 hours (about half): summarizing a backlog, labelling a

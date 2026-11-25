@@ -503,6 +503,60 @@ def cmd_usage(args) -> None:
             print(f"  {str(r['key']):28} {r['requests']:>9} {r['actual_cost']:>12.4f} {r['savings_total']:>12.4f}")
 
 
+def cmd_ocr(args) -> None:
+    """A document's text through the gateway's /v1/ocr: a local file is uploaded; a URL is passed on for the provider to read."""
+    gateway, key = _gateway(args), _key(args)
+    fields: dict = {}
+    if args.model:
+        fields["model"] = args.model
+    if args.pages:
+        fields["pages"] = args.pages
+    if args.blocks:
+        fields["include_blocks"] = True
+    if args.confidence:
+        fields["confidence_scores_granularity"] = args.confidence
+    if args.tables:
+        fields["table_format"] = args.tables
+    if args.images:
+        fields["include_image_base64"] = True
+    if args.schema:
+        try:
+            schema = json.loads(Path(args.schema).read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            raise SystemExit(f"--schema: {e}")
+        fields["document_annotation_format"] = schema if schema.get("type") == "json_schema" else {
+            "type": "json_schema", "json_schema": {"name": Path(args.schema).stem, "schema": schema}}
+        if args.prompt:
+            fields["document_annotation_prompt"] = args.prompt
+    full = args.json or args.schema or args.blocks or args.confidence or args.images
+    headers = {"authorization": f"Bearer {key}", **({} if full else {"accept": "text/markdown"})}
+    url = f"{gateway}/v1/ocr"
+    if args.document.startswith(("https://", "http://")):
+        image = args.document.lower().split("?")[0].endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".tif", ".tiff", ".bmp", ".avif"))
+        kind = "image_url" if image else "document_url"
+        resp = httpx.post(url, headers=headers, json={**fields, "document": {"type": kind, kind: args.document}}, timeout=900)
+    else:
+        path = Path(args.document)
+        if not path.is_file():
+            raise SystemExit(f"no such file: {path}")
+        form = {k: json.dumps(v) if isinstance(v, (dict, list)) else str(v).lower() if isinstance(v, bool) else str(v) for k, v in fields.items()}
+        with path.open("rb") as f:
+            resp = httpx.post(url, headers=headers, data=form, files={"file": (path.name, f)}, timeout=900)
+    if resp.status_code != 200:
+        try:
+            message = resp.json()["error"]["message"]
+        except (ValueError, KeyError, TypeError):
+            message = resp.text[:500]
+        raise SystemExit(f"{resp.status_code}: {message}")
+    out = json.dumps(resp.json(), indent=2, ensure_ascii=False) if full else resp.text
+    if args.out:
+        Path(args.out).write_text(out + ("" if out.endswith("\n") else "\n"))
+        print(f"{args.out}: {resp.headers.get('x-meritorder-pages', '?')} pages, ${float(resp.headers.get('x-meritorder-cost-usd') or 0):.4f}",
+              file=sys.stderr)
+    else:
+        print(out)
+
+
 def _anthropic_batch(batch_id: str) -> bool:
     return batch_id.startswith("msgbatch_")
 
@@ -1140,6 +1194,25 @@ def main(argv: list[str] | None = None) -> None:
     u.add_argument("--by", choices=["day", "month"], help="--bills: one row per model and day (default) or month")
     u.add_argument("--limit", type=int, default=20, help="--bills: how many unmatched bill lines to show")
     u.set_defaults(func=cmd_usage)
+
+    oc = sub.add_parser("ocr", help="a document's text (PDF, image, Word, PowerPoint): a local file or a URL, through /v1/ocr",
+                        description="Prints the document's text as markdown. --json (or any option asking for more) prints the "
+                                    "whole reply: pages, tables, boxes, confidence, annotations. Agents can run it from their "
+                                    "shell; Merit Order's screening counts what it returns as untrusted content.")
+    oc.add_argument("document", help="a file, or an http(s) URL the provider fetches")
+    oc.add_argument("--model", help="an OCR model (default: the ocr tier, the cheapest)")
+    oc.add_argument("--pages", help='pages to read, from 0: "0-3,7"')
+    oc.add_argument("--json", action="store_true", help="print the whole reply as JSON")
+    oc.add_argument("--blocks", action="store_true", help="paragraph-level boxes (include_blocks)")
+    oc.add_argument("--confidence", choices=["page", "block", "word"], help="confidence scores at this granularity")
+    oc.add_argument("--tables", choices=["markdown", "html"], help="tables apart from the text, in this format (table_format)")
+    oc.add_argument("--images", action="store_true", help="the page's images, base64 (include_image_base64)")
+    oc.add_argument("--schema", help="a JSON Schema file: fields to read from the document (document_annotation_format; priced higher)")
+    oc.add_argument("--prompt", help="--schema: what to look for (document_annotation_prompt)")
+    oc.add_argument("--out", help="write to this file rather than standard output")
+    oc.add_argument("--gateway")
+    oc.add_argument("--key")
+    oc.set_defaults(func=cmd_ocr)
 
     bt = sub.add_parser("batch", help="send work that can wait to the providers' batch APIs (about half price), and get the results")
     bsub = bt.add_subparsers(dest="batch_cmd", required=True)

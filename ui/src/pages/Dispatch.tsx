@@ -52,7 +52,8 @@ export function FeedRow({ e }: { e: FeedEvent }) {
         <Text size="xs" c="dimmed">{e.team}</Text>
       </Table.Td>
       <Table.Td className="sans" title={e.error ?? ""}>
-        <Text span inherit c="dimmed">{e.kind === "embeddings" ? "embed" : e.requested || "?"}</Text> <Text span c="dimmed"><Icon name="arrow" size={12} /></Text> {e.model}
+        <Text span inherit c="dimmed">{e.kind === "embeddings" ? "embed" : e.kind === "ocr" ? "ocr" : e.requested || "?"}</Text> <Text span c="dimmed"><Icon name="arrow" size={12} /></Text> {e.model}
+        {!!e.pages && <Text span size="xs" c="dimmed"> · {e.pages} {e.pages === 1 ? "page" : "pages"}</Text>}
         {e.upgraded && <Badge ml={6} size="sm" color="mo" data-tip="Served by a better model at no extra cost">free upgrade</Badge>}
         {failed && <StatusBadge ml={6} size="sm" kind="bad" data-tip={e.error ?? `HTTP ${e.status}`}>{e.status}</StatusBadge>}
       </Table.Td>

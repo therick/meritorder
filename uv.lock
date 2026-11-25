@@ -1190,6 +1190,7 @@ dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pyjwt", extra = ["crypto"] },
+    { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "redis" },
     { name = "uvicorn" },
@@ -1247,6 +1248,7 @@ requires-dist = [
     { name = "pyarrow", marker = "extra == 'parquet'", specifier = ">=18" },
     { name = "pydantic", specifier = ">=2.8" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9" },
+    { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "pyzmq", marker = "extra == 'kv-events'", specifier = ">=26" },
     { name = "redis", specifier = ">=5.0" },
@@ -2101,6 +2103,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/66/c0/0c8b6ad9f17a802ee498c46e004a0eb49bc148f2fd230864601a86dcf6db/python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3", size = 342432, upload-time = "2024-03-01T18:36:20.211Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427", size = 229892, upload-time = "2024-03-01T18:36:18.57Z" },
+]
+
+[[package]]
+name = "python-multipart"
+version = "0.0.33"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9f/b7/15b905f6142a9a8a68f66900788da1a32e4d4254452783b37ad1eccb0506/python_multipart-0.0.33.tar.gz", hash = "sha256:b8112424a6abd162ec08d390565dd113ad699f2fe6fef3c987b8bbcbfe9e390d", size = 50499, upload-time = "2026-10-31T14:23:47.461Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dd/1b/6b1b4164ec734cac911460ab599bfbe46afedd42c5c9627fe4235942c314/python_multipart-0.0.33-py3-none-any.whl", hash = "sha256:8f16c07b36add9da6b2ee87d3efcaf0a45a6de9c3d0a5dd94e9ccf7675a7bc45", size = 32253, upload-time = "2026-10-31T14:23:46.33Z" },
 ]
 
 [[package]]

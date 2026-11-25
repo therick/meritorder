@@ -78,7 +78,7 @@ function StartModal({ api, cfg, initial, onClose, onStarted }: { api: Api; cfg: 
   onStarted: (r: EvalRun) => void }) {
   const opened = !!initial;
   const suites = useData(() => api.evalSuites(), [api]);
-  const live = useMemo(() => (cfg?.models ?? []).filter((m) => m.kind !== "embedding" && !m.name.startsWith("mock-") && m.routes.some((r) => r.live)).map((m) => m.name), [cfg]);
+  const live = useMemo(() => (cfg?.models ?? []).filter((m) => (m.kind ?? "chat") === "chat" && !m.name.startsWith("mock-") && m.routes.some((r) => r.live)).map((m) => m.name), [cfg]);
   const [models, setModels] = useState<string[]>([]);
   const [chosen, setChosen] = useState<string[]>(["starter", "frontier"]);
   const [repeat, setRepeat] = useState<number>(1);

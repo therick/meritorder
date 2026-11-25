@@ -341,6 +341,11 @@ class OpenAIBackend(HTTPBackend):
     async def embed(self, body: dict) -> UpstreamResponse:
         return await self._post(f"{self.cfg.base_url.rstrip('/')}/embeddings", body, {}, False)
 
+    async def ocr(self, body: dict) -> UpstreamResponse:
+        """Mistral's OCR API (``/ocr`` under the base URL): Mistral's own (``https://api.mistral.ai/v1``) and Mistral's models in
+        Microsoft Foundry (``https://<resource>.services.ai.azure.com/providers/mistral/azure``)."""
+        return await self._post(f"{self.cfg.base_url.rstrip('/')}/ocr", body, {}, False)
+
 
 class GeminiBackend(HTTPBackend):
     """Gemini's native API (``api: gemini``): the Gemini API with a key, or Vertex AI (``flavor: vertex``) with Google

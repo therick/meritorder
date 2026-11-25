@@ -7,6 +7,8 @@ export type Row = {
   cache_read_tokens: number;
   cache_write_tokens: number;
   output_tokens: number;
+  /** Pages read by OCR (/v1/ocr). */
+  pages?: number;
   actual_cost: number;
   served_api_cost: number;
   baseline_cost: number;
@@ -419,7 +421,7 @@ export type MeritTier = { model: string; tokens: number; tokens_per_second: numb
 export type Merit = { minutes: number; demand_tokens_per_second: number; tiers: MeritTier[]; clearing_price_per_m: number | null; blended_price_per_m: number | null };
 export type FeedEvent = { ts: string; user: string; team: string; kind: string; requested: string; model: string; backend: string;
   backend_kind: string; floor: string | null; reason?: string | null; status: number; upgraded: boolean; tokens: number; cached: number; cost: number; saved: number;
-  latency_ms: number | null; error: string | null };
+  latency_ms: number | null; error: string | null; pages?: number };
 export type BackendStatus = { name: string; kind: string; format: string; api?: string; host: string | null; enabled: boolean; live: boolean; reason: string | null;
   circuit_open: boolean; draining: boolean; effort_format: string; models: string[]; requests: number; errors: number; error_rate: number;
   /** The provider's batch API, or why the backend has none (batches go only where there's one). */
@@ -566,8 +568,9 @@ export type ApiKey = {
 };
 export type NewKeyResult = { id: string; api_key: string; user: string; team: string; role: string; expires_at: string | null };
 export type PriceTier = { above: number; input: number; output: number; cache_read?: number | null; cache_write?: number | null; cache_write_1h?: number | null };
-/** Dollars per million tokens. `source`: openrouter or litellm (live lists the worker refreshes) or config (an override). */
-export type Price = { input: number; output: number; cache_read: number | null; cache_write: number | null; cache_write_1h?: number | null; tiers?: PriceTier[]; source?: string | null };
+/** Dollars per million tokens (an OCR model's: per page). `source`: openrouter or litellm (live lists the worker refreshes) or config (an override). */
+export type Price = { input: number; output: number; cache_read: number | null; cache_write: number | null; cache_write_1h?: number | null; tiers?: PriceTier[]; source?: string | null;
+  per_page?: number | null; per_annotated_page?: number | null };
 /** When prices were last checked against the live lists, and what that found. */
 export type PriceStatus = { checked_at?: string; refresh_minutes: number; priced_routes?: number; missing?: string[]; changed?: string[];
   sources?: Record<string, { ok: boolean; fetched_at?: string; error?: string }>;

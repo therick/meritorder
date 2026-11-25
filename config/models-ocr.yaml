@@ -1,0 +1,35 @@
+# OCR models (served at /v1/ocr; docs/03-routing.md#ocr), priced per page.
+#
+# Like embedding models, never substituted for one another: a request goes only to backends serving the model it
+# names, the cheapest healthy one first, with fallback. `model: ocr` (or no model) is the `ocr` tier: the cheapest
+# priced OCR model, unless `tiers: {ocr: {kind: ocr, model: <name>}}` names one.
+#
+# Prices come from LiteLLM's list (`ocr_cost_per_page`, `annotation_cost_per_page` for requests asking for
+# annotations, and their batch prices), refreshed with the rest.
+
+backends:
+  # Mistral's models in Microsoft Foundry (Mistral's OCR API under /providers/mistral/azure). Deploy the model in the
+  # Foundry resource first (pay-as-you-go, Global Standard), then set MERITORDER_FOUNDRY_MISTRAL=true. It reads a
+  # document only from the request itself (a data URI or an upload), so a document at a URL skips it.
+  foundry-mistral:
+    enabled: ${MERITORDER_FOUNDRY_MISTRAL:-false}
+    format: openai
+    base_url: ${AZURE_FOUNDRY_ENDPOINT}/providers/mistral/azure
+    auth: {type: api_key, value_env: AZURE_FOUNDRY_API_KEY}
+    price_prefix: azure_ai/
+
+models:
+  mistral-ocr:                   # Mistral OCR 4.1: paragraph boxes (include_blocks), confidence scores, block types
+    kind: ocr
+    aliases: ["mistral-ocr-latest", "mistral-ocr-4", "mistral-ocr-4-1", "mistralai/mistral-ocr-latest"]
+    routes:
+      - {backend: mistral, model: mistral-ocr-4-1}
+  mistral-ocr-4-0:               # Mistral OCR 4.0, the version Foundry has
+    kind: ocr
+    routes:
+      - {backend: foundry-mistral, model: mistral-ocr-4-0}
+  mistral-ocr-3:                 # Mistral OCR 3 (2512): half the price of 4, without blocks or confidence scores
+    kind: ocr
+    aliases: ["mistral-ocr-2512", "mistral-ocr-3-0"]
+    routes:
+      - {backend: mistral, model: mistral-ocr-2512}

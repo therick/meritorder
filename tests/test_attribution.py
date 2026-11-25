@@ -43,5 +43,6 @@ async def test_capabilities(client, gateway):
     assert caps["usage_in_response"] is True and caps["attribution_passthrough"]["max_tags"] == MAX_TAGS
     assert caps["cost_in_response"]["header"] == "x-meritorder-cost-usd" and caps["cost_in_response"]["streaming"] is False
     assert caps["embedding_route"] is True and caps["embedding_models"] == ["embed-small"]
-    assert caps["route_listing"] == {"path": "/v1/routes", "tiers": ["cheap", "embed", "frontier", "standard"]}
+    assert caps["route_listing"] == {"path": "/v1/routes", "tiers": ["cheap", "embed", "frontier", "ocr", "standard"]}
+    assert caps["ocr_route"] is False  # no OCR model configured
     assert caps["data_policy_enforcement"]["refusal"] == "403 data_policy" and caps["health"] == "/readyz"

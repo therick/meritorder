@@ -488,7 +488,7 @@ export function Models({ api, me }: { api: Api; me: Me }) {
       {tab === "breakeven" ? <BreakevenPanel api={api} admin={me.role === "admin"} /> : tab === "evals" ? <EvalsPanel api={api} me={me} cfg={cfg} /> : <>
       {cfg?.prices && <PriceFreshness s={cfg.prices} />}
       {cfg?.quality && <QualityFreshness q={cfg.quality} />}
-      {cfg && <Alert variant="light" color="gray" mb="md">Baseline for savings: <b>{cfg.baseline_model ?? "none"}</b>. Prices are dollars per million tokens. Routes without a known price are never chosen by <code>auto</code>.
+      {cfg && <Alert variant="light" color="gray" mb="md">Baseline for savings: <b>{cfg.baseline_model ?? "none"}</b>. Prices are dollars per million tokens (OCR models: per page). Routes without a known price are never chosen by <code>auto</code>.
         {" "}Under each context window: how the model's prompt tokens compare with the gateway's estimate (×1.00: the estimate was right), learned from its replies.
         {" "}Quality scores (1–5) drive <code>auto</code> routing: a task at level 3 goes only to models scoring at least 3. To check them on your own tasks, use
         the <Anchor component="button" onClick={() => { setTab("evals"); history.replaceState(null, "", "#models/evals"); }}>Evals</Anchor> tab.</Alert>}
@@ -501,7 +501,7 @@ export function Models({ api, me }: { api: Api; me: Me }) {
             <Table.Tbody>
               {models.flatMap((m) => m.routes.map((r, i) => (
                 <Table.Tr key={`${m.name}-${r.backend}`} style={{ opacity: r.live ? 1 : 0.5 }}>
-                  <Table.Td>{i === 0 && <Text fw={600} size="sm">{m.name}</Text>}</Table.Td>
+                  <Table.Td>{i === 0 && <Text fw={600} size="sm">{m.name}{m.kind === "ocr" && <Badge ml={6} size="xs" variant="default">OCR</Badge>}</Text>}</Table.Td>
                   <Table.Td>{i === 0 && <QualityBadges m={m} q={cfg?.quality} />}</Table.Td>
                   <Table.Td>{i === 0 && evals.data?.models[m.name] && (() => {
                     const e = evals.data.models[m.name];
@@ -522,11 +522,17 @@ export function Models({ api, me }: { api: Api; me: Me }) {
                     );
                   })()}</Table.Td>
                   <Table.Td className="num">{i === 0 && <>{m.context_window ? `${Math.round(m.context_window / 1000)}k` : ""}
-                    {m.kind !== "embedding" && <TokenRatio t={m.tokens} />}</>}</Table.Td>
+                    {(m.kind ?? "chat") === "chat" && <TokenRatio t={m.tokens} />}</>}</Table.Td>
                   <Table.Td>{r.backend} <Text span size="xs" c="dimmed">{r.model}</Text></Table.Td>
-                  <Table.Td className="num">{r.price ? r.price.input.toFixed(3) : <StatusBadge size="sm" kind="warn">unpriced</StatusBadge>}</Table.Td>
-                  <Table.Td className="num">{r.price?.cache_read != null ? r.price.cache_read.toFixed(3) : "–"}</Table.Td>
-                  <Table.Td className="num">{r.price ? r.price.output.toFixed(3) : ""}</Table.Td>
+                  {r.price?.per_page != null ? <>
+                    <Table.Td className="num" title="Dollars a page">{r.price.per_page.toFixed(4)}/page</Table.Td>
+                    <Table.Td className="num">–</Table.Td>
+                    <Table.Td className="num" title="Dollars a page with annotations (structured output)">{r.price.per_annotated_page != null ? `${r.price.per_annotated_page.toFixed(4)} annotated` : ""}</Table.Td>
+                  </> : <>
+                    <Table.Td className="num">{r.price ? r.price.input.toFixed(3) : <StatusBadge size="sm" kind="warn">unpriced</StatusBadge>}</Table.Td>
+                    <Table.Td className="num">{r.price?.cache_read != null ? r.price.cache_read.toFixed(3) : "–"}</Table.Td>
+                    <Table.Td className="num">{r.price ? r.price.output.toFixed(3) : ""}</Table.Td>
+                  </>}
                   <Table.Td>{r.price && <PriceSource p={r.price} />}</Table.Td>
                 </Table.Tr>
               )))}

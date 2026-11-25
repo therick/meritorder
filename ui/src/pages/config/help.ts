@@ -135,7 +135,7 @@ export const TEAM = {
 } as const;
 
 export const MODEL = {
-  kind: "Chat models answer messages. Embedding models turn text into vectors (/v1/embeddings) and are never substituted, because vectors from different models aren't comparable.",
+  kind: "Chat models answer messages. Embedding models turn text into vectors (/v1/embeddings) and are never substituted, because vectors from different models aren't comparable. OCR models read documents and images into text (/v1/ocr, Mistral's OCR API) and are priced per page; they aren't substituted either.",
   max_output_tokens: "Most tokens the model can write in one reply, thinking included. A request that doesn't set max_tokens gets this much, less what won't fit in the context window or under the per-request cost limit (Controls). Blank: from the price catalog.",
   context_window: "Most tokens the model takes (prompt plus reply). For `auto`, this is what a long conversation changes, never the level: the model is ruled out when the prompt plus the reply the client asked for is over 95% of this and another model at the level fits. Blank: from the price catalog.",
   aliases: "Other names clients may send for this model, as glob patterns. For example `claude-sonnet-*` makes Claude Code's dated model names land here.",
@@ -152,6 +152,8 @@ export const MODEL = {
   cache_read: "Dollars per million input tokens read from the provider's prompt cache. Blank: 10% of the input price.",
   cache_write: "Dollars per million tokens written to the prompt cache (Anthropic charges 1.25× input for 5-minute caching). Blank: the input price.",
   cache_write_1h: "Dollars per million tokens written to Claude's 1-hour prompt cache (Anthropic charges 2× input). Blank: twice the input price.",
+  per_page: "OCR: dollars for each page read (Mistral OCR 4.1 lists $0.004). The pages the provider says it processed are what's charged.",
+  per_annotated_page: "OCR: dollars a page when a request asks for annotations (structured output read from the page), which providers price higher. Blank: the page price.",
   output: "Dollars per million output tokens, reasoning tokens included.",
 } as const;
 

@@ -191,6 +191,10 @@ def create_app(cfg: Config | None = None, gateway: Gateway | None = None) -> Fas
     async def embeddings(request: Request):
         return await gw.embeddings(request)
 
+    @app.post("/v1/ocr")
+    async def ocr(request: Request):
+        return await gw.ocr(request)
+
     @app.post("/v1/messages")
     async def messages(request: Request):
         return await gw.handle(request, "anthropic")
@@ -238,10 +242,13 @@ def create_app(cfg: Config | None = None, gateway: Gateway | None = None) -> Fas
             if b is None or not team.allows_backend(r.backend):
                 return None
             price = r.price
-            return {"backend": r.backend, "model": r.model, **datapolicy.facts(b.cfg),
-                    "price_per_mtok": None if price is None else {"input": price.input, "output": price.output,
-                                                                  "cache_read": price.cache_read if price.cache_read is not None else round(price.input * 0.1, 6)},
-                    "available": bool(b.available and b.healthy(now))}
+            if price is not None and price.per_page is not None:  # an OCR model's
+                cost = {"price_per_page": {"page": price.per_page, "annotated_page": price.page(True)}}
+            else:
+                cost = {"price_per_mtok": None if price is None else {
+                    "input": price.input, "output": price.output,
+                    "cache_read": price.cache_read if price.cache_read is not None else round(price.input * 0.1, 6)}}
+            return {"backend": r.backend, "model": r.model, **datapolicy.facts(b.cfg), **cost, "available": bool(b.available and b.healthy(now))}
 
         def model_row(m) -> dict:
             return {"model": m.name, "kind": m.kind, "quality": m.quality, "routes": [x for r in m.routes if (x := route_row(r))]}
@@ -275,6 +282,7 @@ def create_app(cfg: Config | None = None, gateway: Gateway | None = None) -> Fas
         except AuthError as e:
             raise HTTPException(e.status, e.message)
         embeddings = sorted(m.name for m in gw.cfg.models if m.kind == "embedding" and any(r.backend in gw.backends for r in m.routes))
+        ocr_models = sorted(m.name for m in gw.cfg.models if m.kind == "ocr" and any(r.backend in gw.backends for r in m.routes))
         return {
             "name": "Merit Order", "version": __version__,
             "capabilities": {
@@ -287,6 +295,8 @@ def create_app(cfg: Config | None = None, gateway: Gateway | None = None) -> Fas
                 "cache_affinity": {"header": "x-session-id"},
                 "embedding_route": bool(embeddings),
                 "embedding_models": embeddings,
+                # Mistral's OCR API, plus a multipart upload and `text` (every page's markdown); priced per page.
+                "ocr_route": {"path": "/v1/ocr", "upload": "multipart file", "models": ocr_models} if ocr_models else False,
                 "route_listing": {"path": "/v1/routes", "tiers": sorted(n for n in gw.cfg.tiers if gw.cfg.tier(n) is not None)},
                 "data_policy_enforcement": {"allowed_providers_header": datapolicy.PROVIDERS_HEADER,
                                             "zero_retention_header": datapolicy.ZERO_RETENTION_HEADER, "refusal": "403 data_policy"},

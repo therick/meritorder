@@ -9,8 +9,10 @@ import { MODEL as H, SECTION } from "./help";
 const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 const PRICE_FIELDS: [keyof typeof H, string][] = [["input", "Input"], ["cache_read", "Cached read"], ["cache_write", "Cache write"],
   ["cache_write_1h", "1-hour cache write"], ["output", "Output"]];
+const PAGE_FIELDS: [keyof typeof H, string][] = [["per_page", "Per page"], ["per_annotated_page", "Per annotated page"]];
+const KINDS = [{ value: "chat", label: "Chat" }, { value: "embedding", label: "Embedding" }, { value: "ocr", label: "OCR" }];
 
-function RouteCard({ route, backends, onChange, onRemove }: { route: Doc; backends: string[]; onChange: (r: Doc) => void; onRemove: () => void }) {
+function RouteCard({ route, backends, ocr, onChange, onRemove }: { route: Doc; backends: string[]; ocr: boolean; onChange: (r: Doc) => void; onRemove: () => void }) {
   const priced = route.price != null;
   return (
     <Paper p="sm">
@@ -21,15 +23,16 @@ function RouteCard({ route, backends, onChange, onRemove }: { route: Doc; backen
         <ActionIcon variant="subtle" color="red" aria-label="Remove route" onClick={onRemove} mb={4}>×</ActionIcon>
       </Group>
       <Group mt="xs" gap="xs" align="center">
-        <SegmentedControl size="xs" value={priced ? "set" : "catalog"} onChange={(v) => onChange({ ...route, price: v === "set" ? { input: 0, output: 0 } : undefined })}
+        <SegmentedControl size="xs" value={priced ? "set" : "catalog"} onChange={(v) => onChange({ ...route, price: v === "set" ? (ocr ? { per_page: 0 } : { input: 0, output: 0 }) : undefined })}
           data={[{ value: "catalog", label: "Price from catalog" }, { value: "set", label: "Set price" }]} aria-label="Price source" />
         <Help text={H.price_mode} about="price source" />
         {!priced && <Text size="xs" c="dimmed">Uses prices.json (Models → Refresh prices). Unknown price = never chosen by auto.</Text>}
       </Group>
       {priced && (
-        <SimpleGrid cols={{ base: 2, sm: 5 }} mt="xs">
-          {PRICE_FIELDS.map(([k, label]) => (
-            <NumberInput key={k} {...lbl(`${label} $/M`, H[k])} size="xs" min={0} decimalScale={6} value={route.price?.[k] ?? ""} placeholder={k.startsWith("cache") ? "auto" : "0"}
+        <SimpleGrid cols={{ base: 2, sm: ocr ? 2 : 5 }} mt="xs">
+          {(ocr ? PAGE_FIELDS : PRICE_FIELDS).map(([k, label]) => (
+            <NumberInput key={k} {...lbl(ocr ? `${label} $` : `${label} $/M`, H[k])} size="xs" min={0} decimalScale={6} value={route.price?.[k] ?? ""}
+              placeholder={k.startsWith("cache") || k === "per_annotated_page" ? "auto" : "0"}
               onChange={(v) => onChange(setIn(route, ["price", k], v === "" || v == null ? undefined : Number(v)))} />
           ))}
         </SimpleGrid>
@@ -44,20 +47,23 @@ function ModelForm({ model, backends, onChange }: { model: Doc; backends: string
   const quality: Record<string, number> = model.quality ?? {};
   const override: Record<string, number> = model.quality_override ?? {};
   const isEmbedding = model.kind === "embedding";
+  const isOcr = model.kind === "ocr";
+  const notChat = isEmbedding || isOcr;
   return (
     <Stack gap="md">
       <SimpleGrid cols={2}>
-        <Select {...lbl("Kind", H.kind)} data={[{ value: "chat", label: "Chat" }, { value: "embedding", label: "Embedding" }]} value={model.kind ?? "chat"}
+        <Select {...lbl("Kind", H.kind)} data={KINDS} value={model.kind ?? "chat"}
           onChange={(v) => set(["kind"], v === "chat" ? undefined : v)} allowDeselect={false}
-          description={isEmbedding ? "Never substituted: vectors from different models aren't comparable." : undefined} />
-        <Num label="Context window (tokens)" value={model.context_window} onChange={(v) => set(["context_window"], v)} min={1} step={1000}
-          description="Blank: from the catalog. Auto routing skips models too small for a session." help={H.context_window} />
-        {!isEmbedding && <Num label="Max output tokens" value={model.max_output_tokens} onChange={(v) => set(["max_output_tokens"], v)} min={1} step={1000}
+          description={isEmbedding ? "Never substituted: vectors from different models aren't comparable."
+            : isOcr ? "Served at /v1/ocr, priced per page; never substituted for another OCR model." : undefined} />
+        {!isOcr && <Num label="Context window (tokens)" value={model.context_window} onChange={(v) => set(["context_window"], v)} min={1} step={1000}
+          description="Blank: from the catalog. Auto routing skips models too small for a session." help={H.context_window} />}
+        {!notChat && <Num label="Max output tokens" value={model.max_output_tokens} onChange={(v) => set(["max_output_tokens"], v)} min={1} step={1000}
           description="Blank: from the catalog. What a request without max_tokens may write." help={H.max_output_tokens} />}
       </SimpleGrid>
       <TagsInput {...lbl("Other names clients may use", H.aliases)} description='Glob patterns, e.g. "claude-sonnet-*" so Claude Code model names land here.'
         value={model.aliases ?? []} onChange={(v) => set(["aliases"], v.length ? v : undefined)} clearable />
-      {!isEmbedding && (
+      {!notChat && (
         <>
           <Divider />
           <SectionTitle title="Quality (1–5): what auto may use it for" right={<Help text={H.quality} about="quality scores" />} />
@@ -80,8 +86,8 @@ function ModelForm({ model, backends, onChange }: { model: Doc; backends: string
             data={EFFORT_LEVELS} value={model.effort_levels ?? []} onChange={(v) => set(["effort_levels"], v.length ? v : undefined)} clearable />
         </>
       )}
-      <Txt label="Hugging Face repository (open weights)" value={model.hf_id} onChange={(v) => set(["hf_id"], v)} placeholder="e.g. Qwen/Qwen3-Coder-Next" mono
-        description="Needed to self-host it on GPUs, and to appear in the what-if calculator." help={H.hf_id} />
+      {!isOcr && <Txt label="Hugging Face repository (open weights)" value={model.hf_id} onChange={(v) => set(["hf_id"], v)} placeholder="e.g. Qwen/Qwen3-Coder-Next" mono
+        description="Needed to self-host it on GPUs, and to appear in the what-if calculator." help={H.hf_id} />}
       <Divider />
       <Group justify="space-between">
         <SectionTitle title="Routes: where it can run" />
@@ -89,7 +95,7 @@ function ModelForm({ model, backends, onChange }: { model: Doc; backends: string
       </Group>
       <Text size="xs" c="dimmed">{H.routes}</Text>
       {routes.map((r, i) => (
-        <RouteCard key={i} route={r} backends={backends} onChange={(nr) => set(["routes", i], nr)} onRemove={() => set(["routes", i], undefined)} />
+        <RouteCard key={i} route={r} backends={backends} ocr={isOcr} onChange={(nr) => set(["routes", i], nr)} onRemove={() => set(["routes", i], undefined)} />
       ))}
       {!routes.length && <Status kind="bad">A model needs at least one route.</Status>}
     </Stack>
@@ -129,7 +135,7 @@ export function ModelsEditor({ draft, setDraft, backendNames }: { draft: Doc; se
               return (
                 <Table.Tr key={n} style={{ cursor: "pointer" }} onClick={() => setEditing(n)}>
                   <Table.Td fw={600}>{n}</Table.Td>
-                  <Table.Td>{m.kind === "embedding" ? <Badge size="sm" variant="default">embedding</Badge> : "chat"}</Table.Td>
+                  <Table.Td>{m.kind === "embedding" || m.kind === "ocr" ? <Badge size="sm" variant="default">{m.kind === "ocr" ? "OCR" : m.kind}</Badge> : "chat"}</Table.Td>
                   <Table.Td><Group gap={4}>{Object.entries(m.quality ?? {}).map(([k, v]) => <Badge key={k} size="sm" variant="default" className="mono">{k} {typeof v === "number" ? v.toFixed(1) : String(v)}</Badge>)}</Group></Table.Td>
                   <Table.Td><Group gap={4}>{(m.routes ?? []).map((r: Doc, i: number) => <Badge key={i} size="sm" variant={r.price ? "light" : "default"} color={r.price ? "mo" : "gray"} title={r.price ? "Priced here, overriding the catalog" : undefined}>{r.backend}</Badge>)}</Group></Table.Td>
                   <Table.Td><Text size="xs" c="dimmed">{(m.effort_levels ?? []).join(", ") || "auto"}</Text></Table.Td>

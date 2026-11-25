@@ -14,7 +14,8 @@ Checked, with fixed rules and no model (the research behind the choice is in dec
   wget, DNS lookups with command substitution (a known way to leak data), reading credential files, and writing agent,
   editor, git-hook or shell start-up configuration.
 * **Untrusted content**: a result from a web fetch or search, or from a tool of an MCP server registered as carrying
-  other people's words (``mcp.servers.<name>.untrusted_content``). From then on the session is marked, and risky tool calls
+  other people's words (``mcp.servers.<name>.untrusted_content``), or a document read with ``meritorder ocr`` in a shell
+  command. From then on the session is marked, and risky tool calls
   are also counted as ``after_untrusted``: the pattern of prompt injection, where text an agent reads tells it what to do.
 * **Image links with data** in the model's own text: Markdown images whose URL carries a query, a common exfiltration
   channel when a client renders them.
@@ -79,6 +80,9 @@ RISKY = {"pipe_to_shell", "upload", "dns_exfil", "credential_read", "config_writ
 # Tools whose results are someone else's words: fetched pages and search results.
 UNTRUSTED_TOOLS = re.compile(r"(?:^|[_.:])(?:web_?fetch|fetch|web_?search|search_web|browse\w*|browser\w*|read_url|get_url|"
                              r"http_get|curl_url|scrape\w*)$", re.I)
+# A shell command reading a document with Merit Order's OCR (`meritorder ocr`): its output is the document's words.
+OCR_COMMAND = re.compile(r"(?:^|[\s;&|(])meritorder\s+ocr\b")
+OCR_TOOL = "meritorder_ocr"  # what such a call is named here, so its result counts as untrusted content
 MD_IMAGE = re.compile(r"!\[[^\]]{0,200}\]\(\s*https?://[^)\s]+\?[^)\s]+\)")
 
 
@@ -131,14 +135,29 @@ def _results(m: dict, names: dict[str, str]) -> list[tuple[str, str]]:
             for b in content if isinstance(b, dict) and b.get("type") == "tool_result"]
 
 
+def _shell(name: str) -> bool:
+    return name in SHELL_TOOLS or name.endswith("bash") or name.endswith("shell")
+
+
+def _named(name: str, args: Any) -> str:
+    """A tool call's name, or OCR_TOOL for a shell command that runs `meritorder ocr`."""
+    if _shell(name) and isinstance(args, dict) and OCR_COMMAND.search(_command(args)):
+        return OCR_TOOL
+    return name
+
+
 def _ids(m: dict) -> dict[str, str]:
+    from .outcomes import _args
+
     ids = {}
     for tc in m.get("tool_calls") or []:
-        ids[tc.get("id") or ""] = str((tc.get("function") or {}).get("name") or "").lower()
+        fn = tc.get("function") or {}
+        name = str(fn.get("name") or "").lower()
+        ids[tc.get("id") or ""] = _named(name, _args(fn.get("arguments")) if _shell(name) else None)
     if isinstance(m.get("content"), list):
         for b in m["content"]:
             if isinstance(b, dict) and b.get("type") == "tool_use":
-                ids[b.get("id") or ""] = str(b.get("name") or "").lower()
+                ids[b.get("id") or ""] = _named(str(b.get("name") or "").lower(), b.get("input"))
     return ids
 
 
@@ -209,7 +228,7 @@ def scan(body: dict, since: int, untrusted: bool = False, untrusted_prefixes: tu
             if _secrets(blob):
                 add("secret_in_tool_call")
                 risky += 1
-            if name in SHELL_TOOLS or name.endswith("bash") or name.endswith("shell"):
+            if _shell(name):
                 cmd = _command(args)
                 for kind, rx in SHELL_RULES:
                     if rx.search(cmd):
@@ -220,7 +239,7 @@ def scan(body: dict, since: int, untrusted: bool = False, untrusted_prefixes: tu
                 risky += 1
         if role in ("user", "tool", "system", "developer"):
             for tool, result in _results(m, names):
-                if UNTRUSTED_TOOLS.search(tool) or tool.startswith("mcp__") and "fetch" in tool or \
+                if UNTRUSTED_TOOLS.search(tool) or tool == OCR_TOOL or tool.startswith("mcp__") and "fetch" in tool or \
                         untrusted_prefixes and tool.startswith(untrusted_prefixes):
                     add("untrusted_content")
                     untrusted = True

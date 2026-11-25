@@ -81,7 +81,7 @@ async def test_route_listing(client, gateway):
     assert (await client.get("/v1/routes")).status_code == 401
     out = (await client.get("/v1/routes", headers=auth())).json()
     routes = out["routes"]
-    assert set(routes) == {"frontier", "standard", "cheap", "embed"}
+    assert set(routes) == {"frontier", "standard", "cheap", "embed", "ocr"}
     assert [m["model"] for m in routes["frontier"]["candidates"]["coding"]] == ["big"]
     assert {m["model"] for m in routes["cheap"]["candidates"]["general"]} == {"big", "small"}
     [embed] = routes["embed"]["candidates"]["any"]

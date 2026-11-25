@@ -147,3 +147,12 @@ test("MCP servers and a team's agent tools are set on the Configuration page, an
   await expect(page.getByRole("cell", { name: "personal-notion" })).toBeVisible();
   await expect(page.getByText("would be left out").first()).toBeVisible();
 });
+
+test("OCR models are priced per page, and their pages show in Reports", async ({ page }) => {
+  await page.goto("./#models");
+  await expect(page.getByRole("row", { name: /mistral-ocr-4-0\s*OCR.*0\.0040\/page.*0\.0050 annotated/ })).toBeVisible();
+  await page.goto("./#reports/breakdown");
+  await page.locator("label").filter({ hasText: /^Model$/ }).click();
+  await expect(page.getByRole("columnheader", { name: "Pages" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /^mistral-ocr-4-0\b/ })).toBeVisible();
+});
