@@ -46,6 +46,7 @@ def parquet_schema():
         "status": pa.int32(), "latency_ms": pa.int32(), "ttft_ms": pa.int32(),
         "stream": pa.bool_(), "upgraded": pa.bool_(), "proxy_cache": pa.bool_(),
         "input_tokens": pa.int64(), "cache_read_tokens": pa.int64(), "cache_write_tokens": pa.int64(), "output_tokens": pa.int64(),
+        "pages": pa.int32(),
         **{f: pa.string() for f in _TEXT},
         **{f: pa.float64() for f in _COSTS},
     }

@@ -62,8 +62,33 @@ def overridden(route) -> bool:
     return route.price is not None and route.price.source == "config"
 
 
+def _non_negative(value) -> float | None:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return v if v >= 0 else None
+
+
+def ocr_price(entry: dict) -> dict | None:
+    """An OCR model's LiteLLM entry (``mode: ocr``) as a price per page, annotated pages and the batch API's included."""
+    page = _non_negative(entry.get("ocr_cost_per_page"))
+    if page is None:
+        return None
+    price: dict = {"input": 0.0, "output": 0.0, "per_page": page}
+    if (annotated := _non_negative(entry.get("annotation_cost_per_page"))) is not None:
+        price["per_annotated_page"] = annotated
+    if (b_page := _non_negative(entry.get("ocr_cost_per_page_batches"))) is not None:
+        price["batch"] = {"input": 0.0, "output": 0.0, "per_page": b_page}
+        if (b_annotated := _non_negative(entry.get("annotation_cost_per_page_batches"))) is not None:
+            price["batch"]["per_annotated_page"] = b_annotated
+    return price
+
+
 def litellm_price(entry: dict) -> dict | None:
-    """One LiteLLM entry as a price (dollars per million tokens), with its long-prompt tiers."""
+    """One LiteLLM entry as a price (dollars per million tokens, or per page for OCR), with its long-prompt tiers."""
+    if entry.get("mode") == "ocr" or entry.get("ocr_cost_per_page") is not None:
+        return ocr_price(entry)
     if entry.get("input_cost_per_token") is None and entry.get("output_cost_per_token") is None:
         return None
     price: dict = {"input": _per_million(entry.get("input_cost_per_token")) or 0.0, "output": _per_million(entry.get("output_cost_per_token")) or 0.0}

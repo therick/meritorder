@@ -5,7 +5,7 @@ Body limits are enforced before a handler reads the body.
 LLM requests can be large (long agent histories, base64 images), so the API default is generous:
 32 MB, Anthropic's own request limit (``MERITORDER_MAX_BODY_MB``). Endpoints that take small
 bodies, including the unauthenticated sign-in exchange, get much smaller limits; batch uploads get the
-providers' own (512 MB a file, 256 MB a message batch).
+providers' own (512 MB a file, 256 MB a message batch), and documents for OCR Mistral's (a 50 MB file, sent as base64).
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ import os
 SMALL = (("/auth/", 64 * 1024), ("/scim/", 1024 * 1024))
 # Batches carry many requests in one body, up to the providers' own limits: OpenAI's Files API takes 512 MB a file, and
 # Anthropic's Message Batches 256 MB a batch.
-LARGE = (("/v1/files", 512 * 1024 * 1024), ("/v1/messages/batches", 256 * 1024 * 1024))
+# A document for OCR may be 50 MB (Mistral's limit), a third more as a base64 data URI.
+LARGE = (("/v1/files", 512 * 1024 * 1024), ("/v1/messages/batches", 256 * 1024 * 1024), ("/v1/ocr", 72 * 1024 * 1024))
 
 
 def max_body_bytes() -> int:

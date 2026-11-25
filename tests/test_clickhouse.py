@@ -101,7 +101,7 @@ def test_rows_are_written_as_each_column_would_be():
             complete_row({"id": str(uuid.UUID(int=7)), "ts": NOW, "served_model": None, "output_tokens": None, "baseline_cost": None})]
     each = b"".join(chm._encoder(t)(r.get(f)) for r in rows for f, t in column_types())
     assert row_binary(rows) == each
-    assert len([p for p in chm._row_plan() if p[0] is not None]) == 3  # tokens, costs, the batch saving
+    assert len([p for p in chm._row_plan() if p[0] is not None]) == 4  # tokens, costs, the batch saving, OCR pages
 
 
 # ---------------------------------------------------------------------------- the HTTP client

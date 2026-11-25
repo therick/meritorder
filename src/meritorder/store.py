@@ -37,14 +37,14 @@ LEDGER_FIELDS = [
     "actual_cost", "served_api_cost", "baseline_cost", "list_cost",
     "savings_routing", "savings_caching", "savings_self_hosting", "savings_compression", "savings_compression_model",
     "savings_response_cache",
-    "service_tier", "batch_id", "savings_batch", "failed_over",
+    "service_tier", "batch_id", "savings_batch", "failed_over", "pages",
 ]
 MIX_FIELDS = ("input", "cache_read", "cache_write", "output")  # the kinds of token a request's price is made of
 SUM_FIELDS = [
     "input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens",
     "actual_cost", "served_api_cost", "baseline_cost", "list_cost",
     "savings_routing", "savings_caching", "savings_self_hosting", "savings_batch", "savings_compression", "savings_compression_model",
-    "savings_response_cache",
+    "savings_response_cache", "pages",
 ]
 # Savings by cause, in the order they're worked out (docs/08-reporting.md); together they make savings_total. compression
 # is the rules', compression_model what model-based compression took out on top of them; batch is what a provider's
@@ -1415,10 +1415,15 @@ CREATE TABLE IF NOT EXISTS mcp_calls (
 CREATE INDEX IF NOT EXISTS mcp_calls_ts ON mcp_calls (ts);
 CREATE INDEX IF NOT EXISTS mcp_calls_team_ts ON mcp_calls (team, ts);
 """
+# Pages read by OCR (/v1/ocr, decision 77), on a request and in the hourly rollup.
+SCHEMA_V25 = """
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS pages integer NOT NULL DEFAULT 0;
+ALTER TABLE usage_hourly ADD COLUMN IF NOT EXISTS pages bigint NOT NULL DEFAULT 0;
+"""
 MIGRATIONS = [(1, SCHEMA_V1), (2, SCHEMA_V2), (3, SCHEMA_V3), (4, SCHEMA_V4), (5, SCHEMA_V5), (6, SCHEMA_V6), (7, SCHEMA_V7),
               (8, SCHEMA_V8), (9, SCHEMA_V9), (10, SCHEMA_V10), (11, SCHEMA_V11), (12, SCHEMA_V12), (13, SCHEMA_V13),
               (14, SCHEMA_V14), (15, SCHEMA_V15), (16, SCHEMA_V16), (18, SCHEMA_V18), (19, SCHEMA_V19),
-              (20, SCHEMA_V20), (21, SCHEMA_V21), (22, SCHEMA_V22), (23, SCHEMA_V23), (24, SCHEMA_V24)]
+              (20, SCHEMA_V20), (21, SCHEMA_V21), (22, SCHEMA_V22), (23, SCHEMA_V23), (24, SCHEMA_V24), (25, SCHEMA_V25)]
 EVAL_RUN_FIELDS = ("status", "progress", "scores", "results", "error", "cost", "started_at", "finished_at", "applied_version")
 
 _SUMS_SQL = ", ".join(f"coalesce(sum({f}), 0) AS {f}" for f in SUM_FIELDS)

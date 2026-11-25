@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- OCR: `POST /v1/ocr` reads a document or image into text, speaking Mistral's OCR API (blocks, tables, confidence scores
+  and annotations when asked), plus a multipart upload, `text` in the reply, and `Accept: text/markdown`. OCR models are
+  priced per page from LiteLLM's list and routed like embeddings; `meritorder ocr FILE` from the CLI. Ships Mistral OCR
+  4.1 and 3, and OCR 4.0 in Foundry. The ledger records pages (decision 77). Needs migration 25 (`meritorder migrate`).
 - Older model names (`claude-sonnet-4-5`) get the model's current version, as before, now as a setting
   (`routing.upgrade_versions`, on; Configuration → Routing) and said on the response (`x-meritorder-upgraded-from`).
   Off, other versions get a 404 naming the current one.

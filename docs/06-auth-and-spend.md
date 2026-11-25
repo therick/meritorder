@@ -263,7 +263,8 @@ are each looked at as they arrive. Fixed rules, no model; it takes well under a 
 | `after_untrusted` | One of the risky kinds above after the session read untrusted content: the shape of a prompt injection |
 
 Untrusted content is a result from a web fetch or search tool (`WebFetch`, `web_search`, browser tools, MCP fetch
-tools), or from a tool of an MCP server registered with `untrusted_content: true` (see [MCP gateway](#mcp-gateway)).
+tools), from a tool of an MCP server registered with `untrusted_content: true` (see [MCP gateway](#mcp-gateway)), or
+from a shell command running `meritorder ocr` (a document's text, [03](03-routing.md#ocr)).
 Once a session has read some, its requests carry `screen_untrusted: 1`.
 
 **Where it shows.** Each request with findings gets a `screen` ledger tag (the kinds, joined with `+`, for example

@@ -2273,3 +2273,26 @@ machine, for the agent's managed settings to decide.
 
 **Revisit if:** the harnesses change how they name tools or list skills (the patterns are in agenttools.py and its
 tests), or a fourth harness needs supporting.
+
+## 77. OCR: Mistral's API, priced per page, routed like embeddings
+
+**Why:** Teams wanted to send a document and get its text back, through the gateway that already keeps their keys,
+budgets and data policy, with the detail a document model gives (boxes, tables, confidence, structured fields) when asked.
+
+**How:** `POST /v1/ocr` takes and returns Mistral's OCR API, the one LiteLLM's `/ocr` follows too, so existing clients work,
+with a multipart upload and a `text` field (and `Accept: text/markdown`) for the plain case. OCR models are a model kind
+of their own, routed as embeddings are (the named model's cheapest healthy backend, fallback, never another model), priced
+per page from LiteLLM's list, with the pages counted before sending where possible so the per-request limit holds.
+Agents use it through `meritorder ocr` from their shell, which works the same in Claude Code, Codex and pi, and its output
+counts as untrusted content for screening.
+
+**Not chosen:** OCR inside the gateway (Tesseract and the like): a model in the request path, and far behind current
+document models. Fetching documents from URLs in the gateway: it would reach addresses only the gateway can (SSRF); a URL
+goes to the provider as it is. An MCP tool for it: an agent would have to write the file into the tool call as base64,
+through its own output tokens, so a shell command that uploads the file is cheaper and faster. Vision chat models as an
+OCR engine: they work (Claude, Gemini and GPT read PDFs through `/v1/messages` already) but give no boxes or confidence and
+cost more per page; worth adding as a fallback engine if a team needs one.
+
+**Revisit if:** teams send OCR in bulk (Mistral's batch API takes `/v1/ocr` at half price, and the batch prices are already
+read), need another provider's document API (Azure Document Intelligence, Textract, Document AI: each needs a translator),
+or volume makes self-hosted OCR models on the GPUs worth it.

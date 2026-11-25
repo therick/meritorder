@@ -102,6 +102,31 @@ class MockBackend(Backend):
         return UpstreamResponse(200, body={"object": "list", "data": data, "model": body.get("model"),
                                            "usage": {"prompt_tokens": tokens, "total_tokens": tokens}})
 
+    async def ocr(self, body: dict) -> UpstreamResponse:
+        """A fake OCR reply in Mistral's shape: a page per page of the document (an inline PDF's count, else one), each
+        saying which page it is; a text file sent inline comes back as its first page's markdown."""
+        from .. import ocr
+
+        decoded = ocr._decoded(ocr.document_url(body))
+        total = ocr.pages_to_read({k: v for k, v in body.items() if k != "pages"}) or 1
+        wanted = ocr.page_list(body) or list(range(total))
+        pages = []
+        for i in [p for p in wanted if p < total] or [0]:
+            md = f"# Page {i + 1}\n\n[{body.get('model')}] text of page {i + 1}"
+            if i == 0 and decoded and decoded[0].startswith("text/"):
+                md = decoded[1].decode("utf-8", "replace")[:2000]
+            page: dict = {"index": i, "markdown": md, "images": [], "tables": [], "hyperlinks": [], "header": None, "footer": None,
+                          "dimensions": {"dpi": 200, "height": 2200, "width": 1700}}
+            if body.get("include_blocks"):
+                page["blocks"] = [{"type": "text", "content": md, "top_left_x": 100, "top_left_y": 100, "bottom_right_x": 1600, "bottom_right_y": 300}]
+            if body.get("confidence_scores_granularity"):
+                page["confidence_scores"] = {"average_page_confidence_score": 0.98, "minimum_page_confidence_score": 0.9}
+            pages.append(page)
+        out: dict = {"pages": pages, "model": body.get("model"), "usage_info": {"pages_processed": len(pages), "doc_size_bytes": len(decoded[1]) if decoded else None}}
+        if body.get("document_annotation_format"):
+            out["document_annotation"] = json.dumps({"pages": len(pages)})
+        return UpstreamResponse(200, body=out)
+
     def _refusal(self, body: dict, stream: bool, prompt: int) -> UpstreamResponse:
         """Simulate a safety refusal: Claude's stop_reason "refusal" / OpenAI's "content_filter"."""
         model = body.get("model")

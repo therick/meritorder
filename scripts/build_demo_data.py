@@ -45,7 +45,10 @@ DEMO_ENV = {
     "AZURE_OPENAI_ENDPOINT": "https://example-openai.openai.azure.com",
     "AWS_ACCESS_KEY_ID": "AKIADEMONOTAKEY", "AWS_SECRET_ACCESS_KEY": "demo-not-a-key", "AWS_REGION": "us-east-1",
     "AWS_EC2_METADATA_DISABLED": "true",
-    "MERITORDER_VERTEX": "false", "MERITORDER_FOUNDRY_CLAUDE": "false", "MERITORDER_SKYPILOT": "true",
+    "MERITORDER_VERTEX": "false", "MERITORDER_FOUNDRY_CLAUDE": "false",
+    # Foundry for OCR only (Mistral OCR 4.0): turning on Mistral's own API would add its chat models to the traffic.
+    "MERITORDER_FOUNDRY_MISTRAL": "true", "AZURE_FOUNDRY_ENDPOINT": "https://example-foundry.services.ai.azure.com",
+    "AZURE_FOUNDRY_API_KEY": "demo-not-a-key", "MERITORDER_SKYPILOT": "true",
     "MERITORDER_SKYPILOT_SMALL": "true", "MERITORDER_KUBERNETES": "true", "MERITORDER_FEATURE_KEY": "demo-feature-key",
     "MERITORDER_ORG_BUDGET_USD": "", "MERITORDER_GPU_BUDGET_USD": "", "MERITORDER_MAX_REQUEST_USD": "25",
     "E2E_DEMO_ADMIN_KEY": ADMIN_KEY, "MERITORDER_RESPONSES_KEY": "demo-responses-key-not-a-secret",
@@ -534,6 +537,32 @@ class Demo:
                 "errors": {"data": [{"message": "the batch expired before every request ran (24 hours)"}]} if outcome == "expired" else {},
             }, [], [])
 
+    async def ocr(self) -> None:
+        """Documents read through /v1/ocr: invoices and contracts the data-science and support teams send, priced per page
+        (the routes' prices in prices.json), with the ledger rows the gateway would write."""
+        from meritorder.store import SAVINGS_FIELDS
+
+        rng = self.rng
+        model = self.cfg.model("mistral-ocr-4-0")
+        route = model.routes[0]
+        people = [("data-science", email("mei.chen")), ("data-science", email("jon.fischer")), ("support-bots", email("nora.hill"))]
+        for _ in range(140):
+            team, user = rng.choice(people)
+            pages = max(1, int(rng.lognormvariate(1.6, 0.9)))
+            annotated = rng.random() < 0.2
+            cost = pages * route.cost_price().page(annotated)
+            ts = self.now - timedelta(days=rng.uniform(0, 44), minutes=rng.randrange(600))
+            await self.store.record({
+                "id": self.uuid(), "ts": ts, "user_id": user, "team": team, "key_id": "demo", "session_id": None,
+                "tags": {"project": rng.choice(PROJECTS[team]), **({"ocr_annotated": "1"} if annotated else {})}, "client_format": "ocr",
+                "requested_model": rng.choice(["mistral-ocr-4-0", "mistral-ocr-4-0", "ocr"]), "floor": None, "route_reason": None,
+                "served_model": model.name, "upstream_model": route.model, "backend": route.backend, "backend_kind": "api", "status": 200,
+                "error": None, "stream": False, "upgraded": False, "proxy_cache": False, "input_tokens": 0, "cache_read_tokens": 0,
+                "cache_write_tokens": 0, "output_tokens": 0, "latency_ms": int(900 + pages * rng.uniform(250, 600)), "ttft_ms": None,
+                "actual_cost": cost, "served_api_cost": cost, "baseline_cost": cost, "list_cost": cost, "pages": pages,
+                **dict.fromkeys(SAVINGS_FIELDS, 0.0),
+            })
+
     # ------------------------------------------------------------------ GPUs
 
     async def gpus(self) -> None:
@@ -980,6 +1009,7 @@ async def main(seed: int) -> None:
     await demo.people()
     await demo.traffic()
     await demo.batches()
+    await demo.ocr()
     demo.store.ledger.sort(key=lambda r: r["ts"])  # written as it happened: the batches and judged labels came in between
     await demo.store.rollup(full=True)
     for (hour, backend) in sorted(demo.gpu_hours):  # what the controller accrues for each replica-hour

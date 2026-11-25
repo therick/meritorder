@@ -184,7 +184,7 @@ def parse_tags(value: str) -> dict[str, str]:
 # API's compaction (responses_compact.py), and the exploration arm of a task start and the level it would have had
 # (decision 59), and an escalation inside a task: how many so far and the model it left (decision 62).
 RESERVED_TAGS = ("compression", "compaction", JUDGED_TAG, "explore", "explore_from", "escalation", "escalated_from", "usage",
-                 "screen", "screen_untrusted", "budget_step_down", "agent_tools")
+                 "screen", "screen_untrusted", "budget_step_down", "agent_tools", "ocr_annotated")
 
 
 # Claude Code's own labels (its LLM-gateway headers; the last two with CLAUDE_CODE_GATEWAY_HINT_HEADERS=1, which `meritorder
@@ -475,6 +475,7 @@ class Gateway:
             "upgraded": row.get("upgraded"), "tokens": tokens, "cached": row.get("cache_read_tokens") or 0,
             "cost": round(row.get("actual_cost") or 0, 6), "saved": round(savings, 6),
             "latency_ms": row.get("latency_ms"), "error": row.get("error"),
+            **({"pages": row["pages"]} if row.get("pages") else {}),
         }
         health = None
         if row.get("backend") and row.get("backend_kind") != "cache":
@@ -933,6 +934,12 @@ class Gateway:
         if last is None:
             return self.reject("openai", 503, f"no healthy backend serves '{model.name}'", "overloaded_error")
         return error_response("openai", last.status, last.message, kind_for_status(last.status))
+
+    async def ocr(self, request: Request) -> Response:
+        """/v1/ocr (ocr.py): a document's text, from an OCR model's cheapest healthy backend."""
+        from . import ocr
+
+        return await ocr.serve(self, request)
 
     # ------------------------------------------------------------------ pipeline
 

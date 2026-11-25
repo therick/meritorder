@@ -43,7 +43,7 @@ COLUMN_TYPES = {
     "tags": "Map(String, String)",  # a value that isn't text is kept as JSON, as in the Parquet export
     **dict.fromkeys(("status", "latency_ms", "ttft_ms"), "Nullable(Int32)"),
     **dict.fromkeys(("stream", "upgraded", "proxy_cache"), "Nullable(Bool)"),
-    **dict.fromkeys(("input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens"), "Int64"),
+    **dict.fromkeys(("input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens", "pages"), "Int64"),
     **dict.fromkeys(("actual_cost", "served_api_cost", "baseline_cost", "list_cost", "savings_routing", "savings_caching",
                      "savings_self_hosting", "savings_batch", "savings_compression", "savings_compression_model",
                      "savings_response_cache"), "Float64"),

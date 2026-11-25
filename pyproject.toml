@@ -24,6 +24,7 @@ dependencies = [
     "pyjwt[crypto]>=2.9",
     "botocore>=1.35",
     "websockets>=15",
+    "python-multipart>=0.0.20",
 ]
 
 [project.urls]

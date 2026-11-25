@@ -18,11 +18,13 @@ from .configstore import current_token
 
 log = logging.getLogger("meritorder.prices")
 
-FIELDS = ("input", "output", "cache_read", "cache_write")
+FIELDS = ("input", "output", "cache_read", "cache_write", "per_page", "per_annotated_page")
 PRICE_SECTIONS = ("prices", "context", "max_output", "reasoning")
 
 
 def _fmt(p: dict | None) -> str:
+    if p and p.get("per_page") is not None:
+        return f"${p['per_page']:g} a page"
     return "none" if not p else f"${p.get('input', 0):g}/${p.get('output', 0):g}"
 
 

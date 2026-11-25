@@ -1469,6 +1469,42 @@ stream, asking again in a new session), and none of that can follow a batch requ
 success, and one followed by the same person's live request with similar words would look like someone giving up
 (decision 45).
 
+## OCR
+
+`POST /v1/ocr` reads a document (PDF, image, Word, PowerPoint) into text. It speaks Mistral's OCR API, so Mistral's SDK
+and LiteLLM's `ocr()` work unchanged, and takes a plain upload too:
+
+```bash
+curl $GW/v1/ocr -H "authorization: Bearer $KEY" -F file=@scan.pdf                    # the reply, with `text`
+curl $GW/v1/ocr -H "authorization: Bearer $KEY" -H "accept: text/markdown" -F file=@scan.pdf   # the text alone
+meritorder ocr scan.pdf                                                              # the same, from the CLI
+```
+
+The reply is Mistral's (`pages`, each with its `markdown`, `tables`, `images`, `dimensions`, and `blocks` and
+`confidence_scores` when asked for; `document_annotation`; `usage_info.pages_processed`) plus `text`, every page's
+markdown joined. More detail is Mistral's own options: `include_blocks` (paragraph boxes and block types),
+`confidence_scores_granularity` (page, block or word), `table_format`, `extract_header`/`extract_footer`,
+`include_image_base64`, and annotations (`document_annotation_format`, `bbox_annotation_format`: fields read from the
+page against a JSON Schema, priced higher).
+
+**Routing** is the embeddings rule: OCR models (`kind: ocr`) are never swapped for one another, so a request goes only to
+backends serving the model it names, the cheapest healthy one first, with fallback. No model, or `ocr`, is the `ocr`
+tier: the cheapest priced OCR model (Mistral OCR 3 as shipped), unless `tiers.ocr.model` names one. The shipped models
+are `mistral-ocr` (OCR 4.1, on Mistral's API: blocks and confidence scores), `mistral-ocr-3` (half the price) and
+`mistral-ocr-4-0` (OCR 4.0 in Microsoft Foundry, off until deployed: `MERITORDER_FOUNDRY_MISTRAL=true`). Foundry reads a
+document only from the request, so a document given by URL skips it. The gateway never fetches a URL itself.
+
+**Prices** are per page (`per_page`, and `per_annotated_page` for a request asking for annotations), from LiteLLM's list
+like other direct-API prices. Before a request is sent, its pages are counted where they can be (`pages`, an image, or an
+inline PDF's page objects), and the per-request cost limit applies to that; a document whose pages can't be counted (at a
+URL, or an Office file) is taken as the provider's most, 1,000 pages, unless the request names its `pages`. What's
+charged is what the provider says it read. The ledger records the pages (`pages`; Reports show them once there are any),
+`client_format` `ocr`, and `ocr_annotated` as a tag. The data-policy headers, budgets, rate limits and the opt-in
+response cache (the same file and options, for a team that turns it on) apply as for chat.
+
+Text read from a document is someone else's words, so screening counts a shell command running `meritorder ocr` as
+untrusted content, like a web fetch ([06](06-auth-and-spend.md#request-screening)).
+
 ## When a model refuses
 
 Some models decline requests through safety classifiers (Claude returns HTTP 200 with

@@ -48,16 +48,20 @@ class PriceTier(BaseModel):
 
 
 class BatchPrice(BaseModel):
-    """A provider's batch API prices for a model, dollars per million tokens. Cache prices left out scale with input."""
+    """A provider's batch API prices for a model, dollars per million tokens (OCR: per page). Cache prices left out scale
+    with input."""
 
-    input: float = Field(ge=0)
-    output: float = Field(ge=0)
+    input: float = Field(default=0.0, ge=0)
+    output: float = Field(default=0.0, ge=0)
     cache_read: float | None = Field(default=None, ge=0)
     cache_write: float | None = Field(default=None, ge=0)
+    per_page: float | None = Field(default=None, ge=0)
+    per_annotated_page: float | None = Field(default=None, ge=0)
 
 
 class Price(BaseModel):
-    """Dollars per million tokens."""
+    """Dollars per million tokens; an OCR model's, per page (``per_page``, and ``per_annotated_page`` for a request that asks
+    for annotations, which replaces it)."""
 
     input: float = 0.0
     output: float = 0.0
@@ -75,6 +79,14 @@ class Price(BaseModel):
     # The provider's batch API price for the same model (LiteLLM's *_batches prices, or one written in the config). Unset:
     # the backend's published batch discount applies to every price above (batch_price).
     batch: BatchPrice | None = None
+    per_page: float | None = Field(default=None, ge=0)  # OCR models: dollars a page
+    per_annotated_page: float | None = Field(default=None, ge=0)  # OCR with annotations (structured output): dollars a page
+
+    def page(self, annotated: bool = False) -> float:
+        """An OCR page's price: annotated pages at their own price where there is one."""
+        if annotated and self.per_annotated_page is not None:
+            return self.per_annotated_page
+        return self.per_page or 0.0
 
     def read(self) -> float:
         return self.cache_read if self.cache_read is not None else self.input * 0.1
@@ -99,8 +111,14 @@ class Price(BaseModel):
         read = b.cache_read if b and b.cache_read is not None else None if self.cache_read is None else self.cache_read * ratio_in
         write = b.cache_write if b and b.cache_write is not None else None if self.cache_write is None else self.cache_write * ratio_in
         write_1h = None if self.cache_write_1h is None else self.cache_write_1h * ratio_in
+
+        def per_page(listed: float | None, own: float | None) -> float | None:
+            return listed if listed is not None else None if own is None else own * (1 - discount)
+
         return Price(input=b.input if b else self.input * ratio_in, output=b.output if b else self.output * ratio_out,
                      cache_read=read, cache_write=write, cache_write_1h=write_1h, web_search_per_1k=self.web_search_per_1k, tiers=tiers,
+                     per_page=per_page(b.per_page if b else None, self.per_page),
+                     per_annotated_page=per_page(b.per_annotated_page if b else None, self.per_annotated_page),
                      source=f"{self.source or 'config'} batch" + ("" if b else f" ({discount:.0%} off)"))
 
     def at(self, prompt_tokens: int) -> "Price":
@@ -535,7 +553,7 @@ def unpriced_message(model: str, routes: list[Route]) -> str:
 
 class ModelConfig(BaseModel):
     name: str = ""
-    kind: Literal["chat", "embedding"] = "chat"
+    kind: Literal["chat", "embedding", "ocr"] = "chat"  # ocr: served at /v1/ocr (ocr.py), priced per page
     aliases: list[str] = []
     # 1-5 per task type (decimals allowed). Used with `quality.source: config`, or until a live source has been
     # fetched; once it has, a task type it doesn't cover scores 0 and `auto` won't pick the model for it.
@@ -759,10 +777,10 @@ class BudgetStepDown(BaseModel):
 class TierConfig(BaseModel):
     """A named route a caller asks for by name, as a model (decision 72): Blackstart's tiers (frontier, standard, cheap,
     embed) are route names, and the gateway decides what each sends to. A chat tier is `auto` at a fixed level (the
-    task, coding or general, from the request unless set here); an embedding tier is one model, by default the cheapest
-    priced embedding model."""
+    task, coding or general, from the request unless set here); an embedding or OCR tier is one model, by default the
+    cheapest priced model of its kind."""
 
-    kind: Literal["chat", "embedding"] = "chat"
+    kind: Literal["chat", "embedding", "ocr"] = "chat"
     level: int | None = Field(default=None, ge=1, le=5)
     task: Literal["coding", "general"] | None = None
     model: str | None = None  # a fixed model instead (chat or embedding)
@@ -775,7 +793,7 @@ class TierConfig(BaseModel):
 
 
 DEFAULT_TIERS = {"frontier": TierConfig(level=5), "standard": TierConfig(level=3), "cheap": TierConfig(level=1),
-                 "embed": TierConfig(kind="embedding")}
+                 "embed": TierConfig(kind="embedding"), "ocr": TierConfig(kind="ocr")}
 
 
 class ScreeningConfig(BaseModel):
@@ -1741,14 +1759,15 @@ class Config(BaseModel):
         return self.tiers[name]
 
     def tier_model(self, name: str | None) -> ModelConfig | None:
-        """The model a fixed tier (one with a model, or an embedding tier) sends to; None for a level tier."""
+        """The model a fixed tier (one with a model, or an embedding or OCR tier) sends to; None for a level tier."""
         t = self.tier(name)
         if t is None or t.level is not None:
             return None
         if t.model:
             return next((m for m in self.models if m.name == t.model or m.matches(t.model)), None)
-        embeds = [m for m in self.models if m.kind == "embedding" and any(r.priced for r in m.routes)]
-        return min(embeds, key=lambda m: min(r.cost_price().input for r in m.routes if r.priced), default=None)
+        unit = (lambda p: p.page()) if t.kind == "ocr" else (lambda p: p.input)
+        priced = [m for m in self.models if m.kind == t.kind and any(r.priced for r in m.routes)]
+        return min(priced, key=lambda m: min(unit(r.cost_price()) for r in m.routes if r.priced), default=None)
 
     def model(self, name: str | None) -> ModelConfig | None:
         if not name:

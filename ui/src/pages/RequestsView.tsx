@@ -20,7 +20,7 @@ const PAGE_SIZES = ["25", "50", "100", "200"];
 const SORTS = [{ value: "time", label: "Time" }, { value: "cost", label: "Cost" }, { value: "savings", label: "Savings" }, { value: "latency", label: "Latency" }];
 const YES_NO = [{ value: "", label: "Any" }, { value: "true", label: "Yes" }, { value: "false", label: "No" }];
 const STATUSES = ["success", "error", "4xx", "5xx", "400", "401", "403", "413", "429", "500", "502", "529"];
-const FORMATS = ["anthropic", "openai", "responses", "gemini", "embeddings"];
+const FORMATS = ["anthropic", "openai", "responses", "gemini", "embeddings", "ocr"];
 // Filter keys kept in the URL, beside preset, tags (comma-separated tag filters), limit, sort, order and cursor.
 const TEXT_KEYS = ["start", "end", "team", "user", "key", "session", "requested_model", "served_model", "backend", "format", "status", "task",
   "level", "reason", "min_cost", "max_cost", "min_savings", "max_savings", "savings_cause", "min_latency", "max_latency", "stream", "batch",
@@ -106,7 +106,9 @@ function Detail({ row, onSession }: { row: LedgerRow; onSession: (id: string) =>
           {kv("Served model at API price", <span className="num">{usd(row.served_api_cost)}</span>)}
           {kv("Without Merit Order", <span className="num">{usd(row.baseline_cost)}</span>)}
           {kv("List price", <span className="num">{usd(row.list_cost)}</span>)}
-          {kv("Tokens in / cached / written / out", <span className="num">{num(row.input_tokens)} / {num(row.cache_read_tokens)} / {num(row.cache_write_tokens)} / {num(row.output_tokens)}</span>)}
+          {row.client_format === "ocr"
+            ? kv("Pages read", <span className="num">{num(row.pages ?? 0)}</span>)
+            : kv("Tokens in / cached / written / out", <span className="num">{num(row.input_tokens)} / {num(row.cache_read_tokens)} / {num(row.cache_write_tokens)} / {num(row.output_tokens)}</span>)}
         </Table.Tbody></Table>
       </Panel>
       <Panel title="Savings by cause" hint={usd(row.savings_total)} flush>
@@ -292,7 +294,8 @@ export function RequestsView({ api, me }: { api: Api; me: Me }) {
                       <Table.Td maw={340}><Text size="xs" c="dimmed" lineClamp={2} title={r.route_reason ?? ""}>{r.route_reason ?? "–"}</Text></Table.Td>
                       <Table.Td>{r.backend}</Table.Td>
                       <Table.Td ta="right">{statusOf(r)}</Table.Td>
-                      <Table.Td className="num">{compact(r.input_tokens)} / {compact(r.cache_read_tokens)} / {compact(r.output_tokens)}</Table.Td>
+                      <Table.Td className="num">{r.client_format === "ocr" ? `${compact(r.pages ?? 0)} pages`
+                        : <>{compact(r.input_tokens)} / {compact(r.cache_read_tokens)} / {compact(r.output_tokens)}</>}</Table.Td>
                       <Table.Td className="num">{usd(r.actual_cost)}</Table.Td>
                       <Table.Td className="num">{usd(r.savings_total)}</Table.Td>
                       <Table.Td className="num">{ms(r.latency_ms)}</Table.Td>
